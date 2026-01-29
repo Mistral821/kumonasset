@@ -395,7 +395,7 @@ async def get_survey_history(
     history = []
     for survey, pc in results:
         history.append({
-            "survey_date": survey.survey_date.strftime("%Y-%m-%d %H:%M:%S"),
+            "survey_date": survey.survey_date.strftime("%Y-%m-%d"),
             "asset_number": survey.asset_number,
             "pc_management_number": pc.pc_management_number if pc else "-",
             "location_name": pc.location_name if pc else "정보 없음",
