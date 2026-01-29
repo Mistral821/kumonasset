@@ -330,7 +330,7 @@ async def get_all_pcs(
             "pc_management_number": pc.pc_management_number,
             "location_name": pc.location_name,
             "employee_number": pc.employee_number,
-            "registered_at": pc.registered_at.isoformat(),
+            "registered_at": pc.registered_at.strftime("%Y-%m-%d"),
             "last_updated_at": pc.last_updated_at.isoformat(),
             "surveyed_today": surveyed_today
         })
@@ -402,10 +402,7 @@ async def get_survey_history(
             "employee_number": pc.employee_number if pc else "-"
         })
         
-    return {
-        "success": True,
-        "data": history
-    }
+    return history
 
 
 @router.delete("/api/v1/admin/pc/{asset_number}")
