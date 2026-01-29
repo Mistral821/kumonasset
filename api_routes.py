@@ -354,9 +354,12 @@ async def get_survey_status(
     else:
         target_date = date.today()
     
-    # 조사 완료 수
-    completed = db.query(func.count(func.distinct(SurveyRecord.asset_number))).filter(
-        func.date(SurveyRecord.survey_date) == target_date
+    # 조사 완료 수 (삭제된 PC 제외)
+    completed = db.query(func.count(func.distinct(SurveyRecord.asset_number))).join(
+        PCMaster, SurveyRecord.asset_number == PCMaster.asset_number
+    ).filter(
+        func.date(SurveyRecord.survey_date) == target_date,
+        PCMaster.is_deleted == False
     ).scalar()
     
     return SurveyStatusResponse(
