@@ -51,6 +51,13 @@ class PCRegisterRequest(BaseModel):
     employee_number: str
 
 
+class PCUpdateInfoRequest(BaseModel):
+    new_asset_number: Optional[str] = None
+    pc_management_number: Optional[str] = None
+    location_name: Optional[str] = None
+    employee_number: Optional[str] = None
+
+
 class PCUpdateUserRequest(BaseModel):
     new_employee_number: str
 
@@ -105,7 +112,26 @@ async def register_pc(
     ).first()
     
     if existing:
-        raise HTTPException(status_code=400, detail="이미 등록된 자산번호입니다")
+    if existing:
+        if existing.is_deleted:
+            # 삭제된 PC 재등록 (부활)
+            existing.is_deleted = False
+            existing.pc_management_number = request.pc_management_number
+            existing.location_name = request.location_name
+            existing.employee_number = request.employee_number
+            existing.last_updated_at = datetime.utcnow()
+            
+            db.commit()
+            db.refresh(existing)
+            
+            return {
+                "success": True,
+                "message": "PC 재등록 완료 (복구됨)",
+                "pc_id": existing.id,
+                "asset_number": existing.asset_number
+            }
+        else:
+            raise HTTPException(status_code=400, detail="이미 등록된 자산번호입니다")
     
     # PC 등록
     pc = PCMaster(
@@ -178,6 +204,62 @@ async def update_user(
     return {
         "success": True,
         "message": "사용자 변경 완료"
+    }
+
+
+@router.put("/api/v1/admin/pc/{asset_number}/info")
+async def update_pc_info(
+    asset_number: str,
+    request: PCUpdateInfoRequest,
+    db: Session = Depends(get_db),
+    token: str = Depends(verify_admin_token)
+):
+    """PC 정보 수정 (관리자, 자산번호 변경 포함)"""
+    pc = db.query(PCMaster).filter(
+        PCMaster.asset_number == asset_number,
+        PCMaster.is_deleted == False
+    ).first()
+    
+    if not pc:
+        raise HTTPException(status_code=404, detail="PC 정보를 찾을 수 없습니다")
+    
+    # 자산번호 변경 시 중복 체크 및 Cascade 업데이트
+    if request.new_asset_number and request.new_asset_number != asset_number:
+        # 중복 체크
+        existing = db.query(PCMaster).filter(
+            PCMaster.asset_number == request.new_asset_number
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="변경하려는 자산번호가 이미 존재합니다")
+            
+        # FK Cascade 수동 처리
+        # 1. SurveyRecord
+        db.query(SurveyRecord).filter(
+            SurveyRecord.asset_number == asset_number
+        ).update({"asset_number": request.new_asset_number})
+        
+        # 2. UserChangeHistory
+        db.query(UserChangeHistory).filter(
+            UserChangeHistory.asset_number == asset_number
+        ).update({"asset_number": request.new_asset_number})
+        
+        # 3. PCMaster
+        pc.asset_number = request.new_asset_number
+
+    # 기타 필드 업데이트
+    if request.pc_management_number:
+        pc.pc_management_number = request.pc_management_number
+    if request.location_name:
+        pc.location_name = request.location_name
+    if request.employee_number:
+        pc.employee_number = request.employee_number
+        
+    pc.last_updated_at = datetime.utcnow()
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "PC 정보 수정 완료"
     }
 
 
@@ -284,6 +366,44 @@ async def get_survey_status(
         remaining=total - completed,
         completion_rate=round((completed / total * 100) if total > 0 else 0, 2)
     )
+
+
+@router.get("/api/v1/admin/survey-history")
+async def get_survey_history(
+    start_date: str,
+    end_date: str,
+    db: Session = Depends(get_db),
+    token: str = Depends(verify_admin_token)
+):
+    """기간별 조사 이력 조회"""
+    try:
+        start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end = datetime.strptime(end_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="날짜 형식이 올바르지 않습니다 (YYYY-MM-DD)")
+        
+    # SurveyRecord와 PCMaster 조인
+    results = db.query(SurveyRecord, PCMaster).join(
+        PCMaster, SurveyRecord.asset_number == PCMaster.asset_number
+    ).filter(
+        func.date(SurveyRecord.survey_date) >= start,
+        func.date(SurveyRecord.survey_date) <= end
+    ).order_by(SurveyRecord.survey_date.desc()).all()
+    
+    history = []
+    for survey, pc in results:
+        history.append({
+            "survey_date": survey.survey_date.strftime("%Y-%m-%d %H:%M:%S"),
+            "asset_number": pc.asset_number,
+            "pc_management_number": pc.pc_management_number,
+            "location_name": pc.location_name,
+            "employee_number": pc.employee_number
+        })
+        
+    return {
+        "success": True,
+        "data": history
+    }
 
 
 @router.delete("/api/v1/admin/pc/{asset_number}")
