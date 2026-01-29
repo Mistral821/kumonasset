@@ -112,7 +112,6 @@ async def register_pc(
     ).first()
     
     if existing:
-    if existing:
         if existing.is_deleted:
             # 삭제된 PC 재등록 (부활)
             existing.is_deleted = False
