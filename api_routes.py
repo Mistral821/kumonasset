@@ -381,8 +381,8 @@ async def get_survey_history(
     except ValueError:
         raise HTTPException(status_code=400, detail="날짜 형식이 올바르지 않습니다 (YYYY-MM-DD)")
         
-    # SurveyRecord와 PCMaster 조인
-    results = db.query(SurveyRecord, PCMaster).join(
+    # SurveyRecord와 PCMaster 조인 (Outer Join으로 변경)
+    results = db.query(SurveyRecord, PCMaster).outerjoin(
         PCMaster, SurveyRecord.asset_number == PCMaster.asset_number
     ).filter(
         func.date(SurveyRecord.survey_date) >= start,
@@ -393,10 +393,10 @@ async def get_survey_history(
     for survey, pc in results:
         history.append({
             "survey_date": survey.survey_date.strftime("%Y-%m-%d %H:%M:%S"),
-            "asset_number": pc.asset_number,
-            "pc_management_number": pc.pc_management_number,
-            "location_name": pc.location_name,
-            "employee_number": pc.employee_number
+            "asset_number": survey.asset_number,
+            "pc_management_number": pc.pc_management_number if pc else "-",
+            "location_name": pc.location_name if pc else "정보 없음",
+            "employee_number": pc.employee_number if pc else "-"
         })
         
     return {
