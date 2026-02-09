@@ -1,5 +1,5 @@
 {
-  "server_url": "http://localhost:8000",
-  "comment": "Render 배포 시 이 파일의 server_url을 변경하세요",
-  "example": "https://kumon-asset-api.onrender.com"
+  "server_url": "https://kumonasset.onrender.com",
+  "comment": "Render 서버 URL로 설정됨",
+  "local_url": "http://localhost:8000"
 }
