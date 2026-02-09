@@ -41,7 +41,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='구몬자산관리_Client_v3.1',
+    name='구몬자산관리_Client_v3.2',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
