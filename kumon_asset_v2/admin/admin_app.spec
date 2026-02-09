@@ -6,7 +6,9 @@ a = Analysis(
     ['admin_app.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ('server_config.json', '.'),
+    ],
     hiddenimports=[
         'tkinter',
         'tkinter.ttk',
@@ -16,6 +18,7 @@ a = Analysis(
         'pandas',
         'openpyxl',
         'json',
+        'config',
     ],
     hookspath=[],
     hooksconfig={},

@@ -1,0 +1,5 @@
+{
+  "server_url": "http://localhost:8000",
+  "comment": "Render 배포 시 이 파일의 server_url을 변경하세요",
+  "example": "https://kumon-asset-api.onrender.com"
+}

@@ -4,12 +4,13 @@
 
 import requests
 from typing import Dict, List, Optional
+from config import get_server_url
 
 
 class AdminAPIClient:
-    def __init__(self, base_url: str = "http://localhost:8000"):
+    def __init__(self, base_url: str = None):
         """관리자 API 클라이언트 초기화"""
-        self.base_url = base_url
+        self.base_url = base_url or get_server_url()
         self.token = "kumon_admin_secret_token_2025"
         self.headers = {
             "Authorization": f"Bearer {self.token}",

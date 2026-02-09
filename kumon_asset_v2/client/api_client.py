@@ -4,12 +4,13 @@
 
 import requests
 from typing import Dict, Optional
+from config import get_server_url
 
 
 class APIClient:
-    def __init__(self, base_url: str = "http://localhost:8000", token: str = None):
+    def __init__(self, base_url: str = None, token: str = None):
         """API 클라이언트 초기화"""
-        self.base_url = base_url
+        self.base_url = base_url or get_server_url()
         self.token = token or "kumon_client_secret_token_2025"
         self.headers = {
             "Authorization": f"Bearer {self.token}",
