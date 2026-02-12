@@ -1,10 +1,10 @@
 """
-구몬 자산관리 시스템 - 클라이언트 v3.2
-PC 자산번호 자동 저장, QR 코드 표시, 사번 변경 지원
+구몬 자산관리 시스템 - 클라이언트 v3.5
+캠페인 자동 연동, 사번 변경, QR 코드
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox
 import qrcode
 from PIL import Image, ImageTk
 from api_client import APIClient
@@ -15,30 +15,24 @@ import os
 class AssetClientApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("구몬 자산관리 시스템 v3.2")
+        self.root.title("구몬 자산관리 시스템 v3.5")
         self.root.geometry("800x900")
 
-        # API 클라이언트
         self.api = APIClient()
-
-        # 설정 파일 경로
         self.config_file = "asset_config.json"
 
-        # 저장된 자산 정보
         self.pc_asset_number = None
         self.monitor_asset_number = None
+        self.active_campaign_id = None
+        self.active_campaign_name = None
 
-        # QR 코드 이미지 저장
         self.pc_qr_image = None
         self.monitor_qr_image = None
 
-        # 설정 로드
         self.load_config()
-
         self.setup_ui()
         self.check_connection()
 
-        # PC 자산번호가 없으면 등록 요청
         if not self.pc_asset_number:
             self.root.after(1000, self.prompt_pc_registration)
 
@@ -68,110 +62,92 @@ class AssetClientApp:
         header = ttk.Frame(self.root, padding="10")
         header.pack(fill=tk.X)
 
-        ttk.Label(
-            header,
-            text="구몬 자산관리 시스템",
-            font=("맑은 고딕", 16, "bold")
-        ).pack(side=tk.LEFT)
+        ttk.Label(header, text="구몬 자산관리 시스템",
+                  font=("맑은 고딕", 16, "bold")).pack(side=tk.LEFT)
 
-        self.status_label = ttk.Label(
-            header,
-            text="● 확인 중...",
-            font=("맑은 고딕", 10)
-        )
+        self.status_label = ttk.Label(header, text="● 확인 중...",
+                                      font=("맑은 고딕", 10))
         self.status_label.pack(side=tk.LEFT, padx=20)
 
-        ttk.Button(
-            header,
-            text="연결 테스트",
-            command=self.check_connection
-        ).pack(side=tk.RIGHT)
+        ttk.Button(header, text="연결 테스트",
+                   command=self.check_connection).pack(side=tk.RIGHT)
+
+        # 캠페인 표시 바
+        self.campaign_frame = ttk.LabelFrame(self.root, text="현재 실사 캠페인", padding="8")
+        self.campaign_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
+
+        self.campaign_label = ttk.Label(
+            self.campaign_frame, text="캠페인 정보 조회 중...",
+            font=("맑은 고딕", 10)
+        )
+        self.campaign_label.pack(side=tk.LEFT)
 
         # 탭 구성
         notebook = ttk.Notebook(self.root)
-        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-        # PC 탭
         pc_tab = ttk.Frame(notebook, padding="10")
         notebook.add(pc_tab, text="PC 관리")
         self.setup_pc_tab(pc_tab)
 
-        # 모니터 탭
         monitor_tab = ttk.Frame(notebook, padding="10")
         notebook.add(monitor_tab, text="모니터 관리")
         self.setup_monitor_tab(monitor_tab)
 
     def setup_pc_tab(self, parent):
         """PC 관리 탭"""
-        # 현재 PC 정보
         info_frame = ttk.LabelFrame(parent, text="이 PC의 정보", padding="15")
         info_frame.pack(fill=tk.X, pady=(0, 10))
 
-        # 자산번호 표시
         asset_frame = ttk.Frame(info_frame)
         asset_frame.pack(fill=tk.X, pady=5)
 
-        ttk.Label(asset_frame, text="자산번호:", font=("맑은 고딕", 11, "bold")).pack(side=tk.LEFT)
+        ttk.Label(asset_frame, text="자산번호:",
+                  font=("맑은 고딕", 11, "bold")).pack(side=tk.LEFT)
         self.pc_asset_label = ttk.Label(
-            asset_frame,
-            text=self.pc_asset_number or "미등록",
-            font=("맑은 고딕", 14, "bold"),
-            foreground="blue"
+            asset_frame, text=self.pc_asset_number or "미등록",
+            font=("맑은 고딕", 14, "bold"), foreground="blue"
         )
         self.pc_asset_label.pack(side=tk.LEFT, padx=10)
 
-        ttk.Button(
-            asset_frame,
-            text="재등록",
-            command=self.prompt_pc_registration
-        ).pack(side=tk.RIGHT)
+        ttk.Button(asset_frame, text="재등록",
+                   command=self.prompt_pc_registration).pack(side=tk.RIGHT)
 
-        # 사번 변경 섹션
+        # 사번 변경
         user_frame = ttk.LabelFrame(parent, text="사번 변경", padding="15")
         user_frame.pack(fill=tk.X, pady=(0, 10))
 
         user_input_frame = ttk.Frame(user_frame)
         user_input_frame.pack(fill=tk.X)
 
-        ttk.Label(user_input_frame, text="새 사번:", font=("맑은 고딕", 10)).pack(side=tk.LEFT)
-        self.new_employee_entry = ttk.Entry(user_input_frame, width=20, font=("맑은 고딕", 10))
+        ttk.Label(user_input_frame, text="새 사번:",
+                  font=("맑은 고딕", 10)).pack(side=tk.LEFT)
+        self.new_employee_entry = ttk.Entry(user_input_frame, width=20,
+                                            font=("맑은 고딕", 10))
         self.new_employee_entry.pack(side=tk.LEFT, padx=10)
         self.new_employee_entry.bind('<Return>', lambda e: self.change_employee_number())
+        ttk.Button(user_input_frame, text="사번 변경",
+                   command=self.change_employee_number).pack(side=tk.LEFT, padx=5)
 
-        ttk.Button(
-            user_input_frame,
-            text="사번 변경",
-            command=self.change_employee_number
-        ).pack(side=tk.LEFT, padx=5)
-
-        # QR 코드 섹션
+        # QR 코드
         qr_frame = ttk.LabelFrame(parent, text="QR 코드 (자산조사용)", padding="15")
         qr_frame.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(
-            qr_frame,
-            text="아래 QR 코드를 스마트폰으로 스캔하세요",
-            font=("맑은 고딕", 10)
-        ).pack(pady=(0, 10))
+        ttk.Label(qr_frame, text="아래 QR 코드를 스마트폰으로 스캔하세요",
+                  font=("맑은 고딕", 10)).pack(pady=(0, 10))
 
-        # QR 코드 표시 영역
-        self.pc_qr_label = ttk.Label(qr_frame, text="자산번호를 등록하면 QR 코드가 생성됩니다")
+        self.pc_qr_label = ttk.Label(qr_frame,
+                                     text="자산번호를 등록하면 QR 코드가 생성됩니다")
         self.pc_qr_label.pack(pady=20)
 
-        # 자산조사 완료 버튼
-        ttk.Button(
-            qr_frame,
-            text="자산조사 완료",
-            command=self.complete_pc_survey
-        ).pack(pady=10)
+        ttk.Button(qr_frame, text="자산조사 완료",
+                   command=self.complete_pc_survey).pack(pady=10)
 
-        # PC 등록되어 있으면 QR 코드 생성
         if self.pc_asset_number:
             self.generate_pc_qr()
 
     def setup_monitor_tab(self, parent):
         """모니터 관리 탭"""
-        # 모니터 등록 섹션
         register_frame = ttk.LabelFrame(parent, text="모니터 등록", padding="15")
         register_frame.pack(fill=tk.X, pady=(0, 10))
 
@@ -190,40 +166,33 @@ class AssetClientApp:
             entry.grid(row=i, column=1, sticky=tk.EW, pady=5, padx=(10, 0))
             self.monitor_entries[key] = entry
 
-        # PC 자산번호 자동 입력
         if self.pc_asset_number:
             self.monitor_entries["monitor_connected_pc"].insert(0, self.pc_asset_number)
 
         register_frame.columnconfigure(1, weight=1)
 
-        ttk.Button(
-            register_frame,
-            text="모니터 등록하기",
-            command=self.register_monitor
-        ).grid(row=len(fields), column=0, columnspan=2, pady=(10, 0))
+        ttk.Button(register_frame, text="모니터 등록하기",
+                   command=self.register_monitor).grid(row=len(fields), column=0,
+                                                       columnspan=2, pady=(10, 0))
 
-        # QR 코드 섹션
+        # QR 코드
         qr_frame = ttk.LabelFrame(parent, text="모니터 QR 코드", padding="15")
         qr_frame.pack(fill=tk.BOTH, expand=True)
 
-        # 현재 모니터 자산번호
         self.monitor_asset_display_label = ttk.Label(
             qr_frame,
             text=f"모니터 자산번호: {self.monitor_asset_number}" if self.monitor_asset_number else "",
-            font=("맑은 고딕", 11, "bold"),
-            foreground="green"
+            font=("맑은 고딕", 11, "bold"), foreground="green"
         )
         if self.monitor_asset_number:
             self.monitor_asset_display_label.pack(pady=10)
 
-        self.monitor_qr_label = ttk.Label(qr_frame, text="모니터를 등록하면 QR 코드가 생성됩니다")
+        self.monitor_qr_label = ttk.Label(qr_frame,
+                                          text="모니터를 등록하면 QR 코드가 생성됩니다")
         self.monitor_qr_label.pack(pady=20)
 
-        ttk.Button(
-            qr_frame,
-            text="모니터 자산조사 완료",
-            command=self.complete_monitor_survey
-        ).pack(pady=10)
+        ttk.Button(qr_frame, text="모니터 자산조사 완료",
+                   command=self.complete_monitor_survey).pack(pady=10)
 
         if self.monitor_asset_number:
             self.generate_monitor_qr()
@@ -236,13 +205,9 @@ class AssetClientApp:
         dialog.transient(self.root)
         dialog.grab_set()
 
-        ttk.Label(
-            dialog,
-            text="이 PC의 정보를 등록하세요",
-            font=("맑은 고딕", 14, "bold")
-        ).pack(pady=20)
+        ttk.Label(dialog, text="이 PC의 정보를 등록하세요",
+                  font=("맑은 고딕", 14, "bold")).pack(pady=20)
 
-        # 입력 필드
         fields_frame = ttk.Frame(dialog, padding="20")
         fields_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -263,38 +228,30 @@ class AssetClientApp:
         fields_frame.columnconfigure(1, weight=1)
 
         def register():
-            asset_number = entries["asset_number"].get().strip()
-            pc_management_number = entries["pc_management_number"].get().strip()
-            location_name = entries["location_name"].get().strip()
-            employee_number = entries["employee_number"].get().strip()
-
-            if not all([asset_number, pc_management_number, location_name, employee_number]):
+            vals = {k: e.get().strip() for k, e in entries.items()}
+            if not all(vals.values()):
                 messagebox.showwarning("입력 오류", "모든 필드를 입력해주세요", parent=dialog)
                 return
 
             result = self.api.register_pc(
-                asset_number, pc_management_number, location_name, employee_number
+                vals["asset_number"], vals["pc_management_number"],
+                vals["location_name"], vals["employee_number"]
             )
 
             if result["success"]:
-                self.pc_asset_number = asset_number
+                self.pc_asset_number = vals["asset_number"]
                 self.save_config()
-                self.pc_asset_label.config(text=asset_number)
+                self.pc_asset_label.config(text=vals["asset_number"])
                 self.generate_pc_qr()
-                # 모니터 탭의 연결된 PC 필드 업데이트
                 if hasattr(self, 'monitor_entries') and 'monitor_connected_pc' in self.monitor_entries:
                     self.monitor_entries["monitor_connected_pc"].delete(0, tk.END)
-                    self.monitor_entries["monitor_connected_pc"].insert(0, asset_number)
+                    self.monitor_entries["monitor_connected_pc"].insert(0, vals["asset_number"])
                 messagebox.showinfo("성공", "PC가 등록되었습니다", parent=dialog)
                 dialog.destroy()
             else:
                 messagebox.showerror("오류", result["error"], parent=dialog)
 
-        ttk.Button(
-            dialog,
-            text="등록하기",
-            command=register
-        ).pack(pady=20)
+        ttk.Button(dialog, text="등록하기", command=register).pack(pady=20)
 
     def change_employee_number(self):
         """사번 변경"""
@@ -311,7 +268,6 @@ class AssetClientApp:
             return
 
         result = self.api.update_user(self.pc_asset_number, new_employee)
-
         if result["success"]:
             messagebox.showinfo("성공", "사번이 변경되었습니다")
             self.new_employee_entry.delete(0, tk.END)
@@ -322,19 +278,11 @@ class AssetClientApp:
         """PC QR 코드 생성"""
         if not self.pc_asset_number:
             return
-
-        qr = qrcode.QRCode(
-            version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
-            box_size=10,
-            border=4,
-        )
+        qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L,
+                            box_size=10, border=4)
         qr.add_data(f"PC:{self.pc_asset_number}")
         qr.make(fit=True)
-
-        img = qr.make_image(fill_color="black", back_color="white")
-        img = img.resize((350, 350))
-
+        img = qr.make_image(fill_color="black", back_color="white").resize((350, 350))
         self.pc_qr_image = ImageTk.PhotoImage(img)
         self.pc_qr_label.config(image=self.pc_qr_image, text="")
 
@@ -342,47 +290,33 @@ class AssetClientApp:
         """모니터 QR 코드 생성"""
         if not self.monitor_asset_number:
             return
-
-        qr = qrcode.QRCode(
-            version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
-            box_size=10,
-            border=4,
-        )
+        qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L,
+                            box_size=10, border=4)
         qr.add_data(f"MONITOR:{self.monitor_asset_number}")
         qr.make(fit=True)
-
-        img = qr.make_image(fill_color="black", back_color="white")
-        img = img.resize((350, 350))
-
+        img = qr.make_image(fill_color="black", back_color="white").resize((350, 350))
         self.monitor_qr_image = ImageTk.PhotoImage(img)
         self.monitor_qr_label.config(image=self.monitor_qr_image, text="")
 
     def register_monitor(self):
         """모니터 등록"""
         asset_number = self.monitor_entries["monitor_asset_number"].get().strip()
-        monitor_management_number = self.monitor_entries["monitor_management_number"].get().strip()
-        location_name = self.monitor_entries["monitor_location_name"].get().strip()
-        employee_number = self.monitor_entries["monitor_employee_number"].get().strip()
-        connected_pc = self.monitor_entries["monitor_connected_pc"].get().strip() or None
+        mgmt = self.monitor_entries["monitor_management_number"].get().strip()
+        loc = self.monitor_entries["monitor_location_name"].get().strip()
+        emp = self.monitor_entries["monitor_employee_number"].get().strip()
+        pc = self.monitor_entries["monitor_connected_pc"].get().strip() or None
 
-        if not all([asset_number, monitor_management_number, location_name, employee_number]):
+        if not all([asset_number, mgmt, loc, emp]):
             messagebox.showwarning("입력 오류", "필수 필드를 모두 입력해주세요")
             return
 
-        result = self.api.register_monitor(
-            asset_number, monitor_management_number, location_name, employee_number, connected_pc
-        )
-
+        result = self.api.register_monitor(asset_number, mgmt, loc, emp, pc)
         if result["success"]:
             self.monitor_asset_number = asset_number
             self.save_config()
-
-            # 즉시 QR 코드 생성 (재시작 불필요)
             self.monitor_asset_display_label.config(text=f"모니터 자산번호: {asset_number}")
             self.monitor_asset_display_label.pack(pady=10)
             self.generate_monitor_qr()
-
             messagebox.showinfo("성공", result["data"]["message"])
             for entry in self.monitor_entries.values():
                 entry.delete(0, tk.END)
@@ -394,11 +328,12 @@ class AssetClientApp:
         if not self.pc_asset_number:
             messagebox.showwarning("오류", "PC가 등록되지 않았습니다")
             return
-
-        result = self.api.complete_pc_survey(self.pc_asset_number)
-
+        result = self.api.complete_pc_survey(self.pc_asset_number, self.active_campaign_id)
         if result["success"]:
-            messagebox.showinfo("성공", "PC 자산조사가 완료되었습니다")
+            msg = "PC 자산조사가 완료되었습니다"
+            if self.active_campaign_name:
+                msg += f"\n(캠페인: {self.active_campaign_name})"
+            messagebox.showinfo("성공", msg)
         else:
             messagebox.showerror("오류", result["error"])
 
@@ -407,22 +342,38 @@ class AssetClientApp:
         if not self.monitor_asset_number:
             messagebox.showwarning("오류", "모니터가 등록되지 않았습니다")
             return
-
-        result = self.api.complete_monitor_survey(self.monitor_asset_number)
-
+        result = self.api.complete_monitor_survey(self.monitor_asset_number, self.active_campaign_id)
         if result["success"]:
-            messagebox.showinfo("성공", "모니터 자산조사가 완료되었습니다")
+            msg = "모니터 자산조사가 완료되었습니다"
+            if self.active_campaign_name:
+                msg += f"\n(캠페인: {self.active_campaign_name})"
+            messagebox.showinfo("성공", msg)
         else:
             messagebox.showerror("오류", result["error"])
 
     def check_connection(self):
-        """서버 연결 확인"""
+        """서버 연결 확인 + 활성 캠페인 조회"""
         result = self.api.test_connection()
         if result["success"]:
             self.status_label.config(text="● 온라인", foreground="green")
+            # 활성 캠페인 조회
+            campaign_result = self.api.get_active_campaign()
+            if campaign_result["success"]:
+                data = campaign_result["data"]
+                if data.get("active"):
+                    c = data["campaign"]
+                    self.active_campaign_id = c["id"]
+                    self.active_campaign_name = c["name"]
+                    self.campaign_label.config(
+                        text=f"📋 {c['name']}  ({c['start_date']} ~ {c['end_date']})",
+                        foreground="blue"
+                    )
+                else:
+                    self.campaign_label.config(text="현재 진행 중인 실사 캠페인이 없습니다",
+                                              foreground="gray")
         else:
             self.status_label.config(text="● 오프라인", foreground="red")
-            messagebox.showerror("연결 오류", f"서버에 연결할 수 없습니다\n{result['error']}")
+            self.campaign_label.config(text="서버 연결 실패", foreground="red")
 
 
 if __name__ == "__main__":

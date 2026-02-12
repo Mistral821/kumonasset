@@ -3,8 +3,12 @@
 """
 
 import requests
+import urllib3
 from typing import Dict, Optional
 from config import get_server_url
+
+# SSL 경고 비활성화 (회사 프록시 자체 서명 인증서 대응)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class APIClient:
@@ -12,6 +16,7 @@ class APIClient:
         """API 클라이언트 초기화"""
         self.base_url = base_url or get_server_url()
         self.token = token or "kumon_client_secret_token_2025"
+        self.verify_ssl = False
         self.headers = {
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json"
@@ -20,7 +25,21 @@ class APIClient:
     def test_connection(self) -> Dict:
         """서버 연결 테스트"""
         try:
-            response = requests.get(f"{self.base_url}/", timeout=5)
+            response = requests.get(f"{self.base_url}/", timeout=5, verify=self.verify_ssl)
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def get_active_campaign(self) -> Dict:
+        """활성 캠페인 조회"""
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/v1/active-campaign",
+                headers=self.headers,
+                timeout=5,
+                verify=self.verify_ssl
+            )
             response.raise_for_status()
             return {"success": True, "data": response.json()}
         except Exception as e:
@@ -40,9 +59,8 @@ class APIClient:
             }
             response = requests.post(
                 f"{self.base_url}/api/v1/pc/register",
-                json=data,
-                headers=self.headers,
-                timeout=10
+                json=data, headers=self.headers,
+                timeout=10, verify=self.verify_ssl
             )
             response.raise_for_status()
             return {"success": True, "data": response.json()}
@@ -57,7 +75,7 @@ class APIClient:
             response = requests.get(
                 f"{self.base_url}/api/v1/pc/{asset_number}",
                 headers=self.headers,
-                timeout=10
+                timeout=10, verify=self.verify_ssl
             )
             response.raise_for_status()
             return {"success": True, "data": response.json()}
@@ -74,9 +92,8 @@ class APIClient:
             data = {"new_employee_number": new_employee_number}
             response = requests.put(
                 f"{self.base_url}/api/v1/pc/{asset_number}/user",
-                json=data,
-                headers=self.headers,
-                timeout=10
+                json=data, headers=self.headers,
+                timeout=10, verify=self.verify_ssl
             )
             response.raise_for_status()
             return {"success": True, "data": response.json()}
@@ -85,15 +102,16 @@ class APIClient:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def complete_pc_survey(self, asset_number: str) -> Dict:
+    def complete_pc_survey(self, asset_number: str, campaign_id: int = None) -> Dict:
         """PC 자산조사 완료"""
         try:
             data = {"asset_number": asset_number}
+            if campaign_id:
+                data["campaign_id"] = campaign_id
             response = requests.post(
                 f"{self.base_url}/api/v1/pc/survey",
-                json=data,
-                headers=self.headers,
-                timeout=10
+                json=data, headers=self.headers,
+                timeout=10, verify=self.verify_ssl
             )
             response.raise_for_status()
             return {"success": True, "data": response.json()}
@@ -116,9 +134,8 @@ class APIClient:
             }
             response = requests.post(
                 f"{self.base_url}/api/v1/monitor/register",
-                json=data,
-                headers=self.headers,
-                timeout=10
+                json=data, headers=self.headers,
+                timeout=10, verify=self.verify_ssl
             )
             response.raise_for_status()
             return {"success": True, "data": response.json()}
@@ -133,7 +150,7 @@ class APIClient:
             response = requests.get(
                 f"{self.base_url}/api/v1/monitor/{asset_number}",
                 headers=self.headers,
-                timeout=10
+                timeout=10, verify=self.verify_ssl
             )
             response.raise_for_status()
             return {"success": True, "data": response.json()}
@@ -144,15 +161,16 @@ class APIClient:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def complete_monitor_survey(self, asset_number: str) -> Dict:
+    def complete_monitor_survey(self, asset_number: str, campaign_id: int = None) -> Dict:
         """모니터 자산조사 완료"""
         try:
             data = {"asset_number": asset_number}
+            if campaign_id:
+                data["campaign_id"] = campaign_id
             response = requests.post(
                 f"{self.base_url}/api/v1/monitor/survey",
-                json=data,
-                headers=self.headers,
-                timeout=10
+                json=data, headers=self.headers,
+                timeout=10, verify=self.verify_ssl
             )
             response.raise_for_status()
             return {"success": True, "data": response.json()}

@@ -3,7 +3,7 @@
 PostgreSQL / SQLite 지원
 """
 
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, ForeignKey, Text, Date
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, relationship
 from datetime import datetime
 import os
@@ -30,6 +30,43 @@ class Base(DeclarativeBase):
     pass
 
 
+# ===== 실사 캠페인 =====
+
+class AuditCampaign(Base):
+    """실사 캠페인 (반기별 자산실사 기간)"""
+    __tablename__ = "audit_campaigns"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)                   # 예: "2026년 상반기 자산실사"
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    status = Column(String(20), default="대기", nullable=False)  # 대기 / 진행중 / 완료
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+    # 관계
+    pc_surveys = relationship("SurveyRecord", back_populates="campaign")
+    monitor_surveys = relationship("MonitorSurveyRecord", back_populates="campaign")
+
+
+# ===== 자산 이력 =====
+
+class AssetHistory(Base):
+    """자산 변경 이력"""
+    __tablename__ = "asset_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    asset_type = Column(String(20), nullable=False)       # PC / 모니터
+    asset_number = Column(String(50), nullable=False, index=True)
+    action_type = Column(String(30), nullable=False)      # 등록 / 수정 / 삭제 / 복구 / 사번변경
+    description = Column(Text, nullable=True)              # 상세 설명
+    old_value = Column(Text, nullable=True)                # 이전 값 (JSON)
+    new_value = Column(Text, nullable=True)                # 새 값 (JSON)
+    changed_at = Column(DateTime, default=datetime.now)
+
+
+# ===== PC =====
+
 class PCMaster(Base):
     """PC 마스터 정보"""
     __tablename__ = "pc_master"
@@ -54,11 +91,13 @@ class SurveyRecord(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     asset_number = Column(String(50), ForeignKey("pc_master.asset_number"), nullable=False)
+    campaign_id = Column(Integer, ForeignKey("audit_campaigns.id"), nullable=True)  # 캠페인 연동
     survey_date = Column(DateTime, default=datetime.now)
     completed_at = Column(DateTime, default=datetime.now)
 
     # 관계
     pc = relationship("PCMaster", back_populates="surveys")
+    campaign = relationship("AuditCampaign", back_populates="pc_surveys")
 
 
 class UserChangeHistory(Base):
@@ -74,6 +113,8 @@ class UserChangeHistory(Base):
     # 관계
     pc = relationship("PCMaster", back_populates="user_changes")
 
+
+# ===== 모니터 =====
 
 class MonitorMaster(Base):
     """모니터 마스터 정보"""
@@ -99,11 +140,13 @@ class MonitorSurveyRecord(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     asset_number = Column(String(50), ForeignKey("monitor_master.asset_number"), nullable=False)
+    campaign_id = Column(Integer, ForeignKey("audit_campaigns.id"), nullable=True)  # 캠페인 연동
     survey_date = Column(DateTime, default=datetime.now)
     completed_at = Column(DateTime, default=datetime.now)
 
     # 관계
     monitor = relationship("MonitorMaster", back_populates="surveys")
+    campaign = relationship("AuditCampaign", back_populates="monitor_surveys")
 
 
 def get_db():
