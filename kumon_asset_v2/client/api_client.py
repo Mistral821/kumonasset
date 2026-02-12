@@ -25,7 +25,7 @@ class APIClient:
     def test_connection(self) -> Dict:
         """서버 연결 테스트"""
         try:
-            response = requests.get(f"{self.base_url}/", timeout=5, verify=self.verify_ssl)
+            response = requests.get(f"{self.base_url}/", timeout=15, verify=self.verify_ssl)
             response.raise_for_status()
             return {"success": True, "data": response.json()}
         except Exception as e:
@@ -37,7 +37,7 @@ class APIClient:
             response = requests.get(
                 f"{self.base_url}/api/v1/active-campaign",
                 headers=self.headers,
-                timeout=5,
+                timeout=15,
                 verify=self.verify_ssl
             )
             response.raise_for_status()
@@ -60,7 +60,7 @@ class APIClient:
             response = requests.post(
                 f"{self.base_url}/api/v1/pc/register",
                 json=data, headers=self.headers,
-                timeout=10, verify=self.verify_ssl
+                timeout=30, verify=self.verify_ssl
             )
             response.raise_for_status()
             return {"success": True, "data": response.json()}
@@ -75,7 +75,7 @@ class APIClient:
             response = requests.get(
                 f"{self.base_url}/api/v1/pc/{asset_number}",
                 headers=self.headers,
-                timeout=10, verify=self.verify_ssl
+                timeout=30, verify=self.verify_ssl
             )
             response.raise_for_status()
             return {"success": True, "data": response.json()}
@@ -93,7 +93,7 @@ class APIClient:
             response = requests.put(
                 f"{self.base_url}/api/v1/pc/{asset_number}/user",
                 json=data, headers=self.headers,
-                timeout=10, verify=self.verify_ssl
+                timeout=30, verify=self.verify_ssl
             )
             response.raise_for_status()
             return {"success": True, "data": response.json()}
@@ -111,7 +111,7 @@ class APIClient:
             response = requests.post(
                 f"{self.base_url}/api/v1/pc/survey",
                 json=data, headers=self.headers,
-                timeout=10, verify=self.verify_ssl
+                timeout=30, verify=self.verify_ssl
             )
             response.raise_for_status()
             return {"success": True, "data": response.json()}
@@ -135,7 +135,7 @@ class APIClient:
             response = requests.post(
                 f"{self.base_url}/api/v1/monitor/register",
                 json=data, headers=self.headers,
-                timeout=10, verify=self.verify_ssl
+                timeout=30, verify=self.verify_ssl
             )
             response.raise_for_status()
             return {"success": True, "data": response.json()}
@@ -150,7 +150,7 @@ class APIClient:
             response = requests.get(
                 f"{self.base_url}/api/v1/monitor/{asset_number}",
                 headers=self.headers,
-                timeout=10, verify=self.verify_ssl
+                timeout=30, verify=self.verify_ssl
             )
             response.raise_for_status()
             return {"success": True, "data": response.json()}
@@ -170,7 +170,7 @@ class APIClient:
             response = requests.post(
                 f"{self.base_url}/api/v1/monitor/survey",
                 json=data, headers=self.headers,
-                timeout=10, verify=self.verify_ssl
+                timeout=30, verify=self.verify_ssl
             )
             response.raise_for_status()
             return {"success": True, "data": response.json()}
@@ -195,7 +195,7 @@ class APIClient:
             response = requests.post(
                 f"{self.base_url}/api/v1/pc/re-register-request",
                 json=data, headers=self.headers,
-                timeout=10, verify=self.verify_ssl
+                timeout=30, verify=self.verify_ssl
             )
             response.raise_for_status()
             return {"success": True, "data": response.json()}

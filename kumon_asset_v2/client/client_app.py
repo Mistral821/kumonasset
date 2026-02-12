@@ -56,6 +56,22 @@ class AssetClientApp:
         with open(self.config_file, 'w', encoding='utf-8') as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
 
+    def load_pc_details(self):
+        """서버에서 PC 상세 정보 조회 및 UI 갱신"""
+        if not self.pc_asset_number:
+            return
+
+        result = self.api.get_pc_info(self.pc_asset_number)
+        if result["success"]:
+            data = result["data"]
+            # UI가 초기화된 경우에만 업데이트
+            if hasattr(self, 'lbl_pc_mgmt'):
+                self.lbl_pc_mgmt.config(text=data.get("pc_management_number", "-"))
+                self.lbl_pc_loc.config(text=data.get("location_name", "-"))
+                self.lbl_pc_emp.config(text=data.get("employee_number", "-"))
+        else:
+            print(f"PC 정보 로드 실패: {result['error']}")
+
     def setup_ui(self):
         """UI 구성"""
         # 헤더
@@ -112,6 +128,22 @@ class AssetClientApp:
 
         ttk.Button(asset_frame, text="재등록",
                    command=self.prompt_pc_registration).pack(side=tk.RIGHT)
+
+        # 상세 정보 표시 (New)
+        details_frame = ttk.Frame(info_frame)
+        details_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(details_frame, text="PC관리번호:", font=("맑은 고딕", 10)).grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
+        self.lbl_pc_mgmt = ttk.Label(details_frame, text="-", font=("맑은 고딕", 10, "bold"))
+        self.lbl_pc_mgmt.grid(row=0, column=1, sticky=tk.W, padx=(0, 20))
+
+        ttk.Label(details_frame, text="사업장:", font=("맑은 고딕", 10)).grid(row=0, column=2, sticky=tk.W, padx=(0, 5))
+        self.lbl_pc_loc = ttk.Label(details_frame, text="-", font=("맑은 고딕", 10, "bold"))
+        self.lbl_pc_loc.grid(row=0, column=3, sticky=tk.W, padx=(0, 20))
+
+        ttk.Label(details_frame, text="사용자:", font=("맑은 고딕", 10)).grid(row=0, column=4, sticky=tk.W, padx=(0, 5))
+        self.lbl_pc_emp = ttk.Label(details_frame, text="-", font=("맑은 고딕", 10, "bold"))
+        self.lbl_pc_emp.grid(row=0, column=5, sticky=tk.W)
 
         # 사번 변경
         user_frame = ttk.LabelFrame(parent, text="사번 변경", padding="15")
@@ -442,6 +474,7 @@ class AssetClientApp:
         result = self.api.test_connection()
         if result["success"]:
             self.status_label.config(text="● 온라인", foreground="green")
+            self.load_pc_details()
             # 활성 캠페인 조회
             campaign_result = self.api.get_active_campaign()
             if campaign_result["success"]:

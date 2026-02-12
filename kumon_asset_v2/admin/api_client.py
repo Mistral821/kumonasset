@@ -23,7 +23,7 @@ class AdminAPIClient:
             "Content-Type": "application/json"
         }
 
-    def _get(self, path: str, timeout: int = 10, **kwargs) -> Dict:
+    def _get(self, path: str, timeout: int = 30, **kwargs) -> Dict:
         """공통 GET 요청"""
         try:
             response = requests.get(
@@ -36,7 +36,7 @@ class AdminAPIClient:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def _post(self, path: str, data: dict, timeout: int = 10) -> Dict:
+    def _post(self, path: str, data: dict, timeout: int = 30) -> Dict:
         """공통 POST 요청"""
         try:
             response = requests.post(
@@ -51,7 +51,7 @@ class AdminAPIClient:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def _put(self, path: str, data: dict, timeout: int = 10) -> Dict:
+    def _put(self, path: str, data: dict, timeout: int = 30) -> Dict:
         """공통 PUT 요청"""
         try:
             response = requests.put(
@@ -66,7 +66,7 @@ class AdminAPIClient:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def _delete(self, path: str, timeout: int = 10) -> Dict:
+    def _delete(self, path: str, timeout: int = 30) -> Dict:
         """공통 DELETE 요청"""
         try:
             response = requests.delete(
@@ -81,11 +81,14 @@ class AdminAPIClient:
 
     def test_connection(self) -> Dict:
         try:
-            response = requests.get(f"{self.base_url}/", timeout=5, verify=self.verify_ssl)
+            response = requests.get(f"{self.base_url}/", timeout=10, verify=self.verify_ssl)
             response.raise_for_status()
             return {"success": True, "data": response.json()}
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    # ... (omit methods showing defaults, will rely on replaced class methods or just changing definitions)
+
 
     # ===== PC API =====
     def get_all_pcs(self) -> Dict:
