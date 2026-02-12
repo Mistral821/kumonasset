@@ -176,3 +176,30 @@ class APIClient:
             return {"success": True, "data": response.json()}
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    # ===== 재등록 요청 API =====
+
+    def request_re_registration(self, asset_number: str, requester_employee: str,
+                                 reason: str, new_pc_management_number: str,
+                                 new_location_name: str, new_employee_number: str) -> Dict:
+        """PC 재등록 요청 (관리자 승인 필요)"""
+        try:
+            data = {
+                "asset_number": asset_number,
+                "requester_employee": requester_employee,
+                "reason": reason,
+                "new_pc_management_number": new_pc_management_number,
+                "new_location_name": new_location_name,
+                "new_employee_number": new_employee_number
+            }
+            response = requests.post(
+                f"{self.base_url}/api/v1/pc/re-register-request",
+                json=data, headers=self.headers,
+                timeout=10, verify=self.verify_ssl
+            )
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except requests.exceptions.HTTPError as e:
+            return {"success": False, "error": e.response.json().get("detail", str(e))}
+        except Exception as e:
+            return {"success": False, "error": str(e)}

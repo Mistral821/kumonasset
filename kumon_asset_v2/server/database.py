@@ -65,6 +65,25 @@ class AssetHistory(Base):
     changed_at = Column(DateTime, default=datetime.now)
 
 
+# ===== 재등록 요청 =====
+
+class ReRegistrationRequest(Base):
+    """PC 재등록 요청 (클라이언트 요청 → 어드민 승인)"""
+    __tablename__ = "re_registration_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    asset_number = Column(String(50), nullable=False, index=True)   # 대상 PC 자산번호
+    requester_employee = Column(String(50), nullable=False)         # 요청자 사번
+    reason = Column(Text, nullable=False)                           # 재등록 사유
+    new_pc_management_number = Column(String(50), nullable=False)   # 새 PC관리번호
+    new_location_name = Column(String(100), nullable=False)         # 새 사업장명
+    new_employee_number = Column(String(50), nullable=False)        # 새 사번
+    status = Column(String(20), default="대기", nullable=False)     # 대기 / 승인 / 거절
+    admin_comment = Column(Text, nullable=True)                     # 관리자 코멘트
+    requested_at = Column(DateTime, default=datetime.now)
+    processed_at = Column(DateTime, nullable=True)
+
+
 # ===== PC =====
 
 class PCMaster(Base):

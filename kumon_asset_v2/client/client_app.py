@@ -198,7 +198,12 @@ class AssetClientApp:
             self.generate_monitor_qr()
 
     def prompt_pc_registration(self):
-        """PC 등록 프롬프트"""
+        """PC 등록/재등록 프롬프트"""
+        # 이미 등록된 PC가 있으면 재등록 요청 다이얼로그
+        if self.pc_asset_number:
+            self.prompt_re_registration()
+            return
+
         dialog = tk.Toplevel(self.root)
         dialog.title("PC 등록")
         dialog.geometry("500x400")
@@ -252,6 +257,87 @@ class AssetClientApp:
                 messagebox.showerror("오류", result["error"], parent=dialog)
 
         ttk.Button(dialog, text="등록하기", command=register).pack(pady=20)
+
+    def prompt_re_registration(self):
+        """PC 재등록 요청 다이얼로그 (관리자 승인 필요)"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("PC 재등록 요청")
+        dialog.geometry("550x550")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk.Label(dialog, text="🔄 PC 재등록 요청",
+                  font=("맑은 고딕", 14, "bold")).pack(pady=15)
+
+        ttk.Label(dialog, text="관리자 승인 후 재등록이 처리됩니다",
+                  font=("맑은 고딕", 10), foreground="gray").pack()
+
+        fields_frame = ttk.Frame(dialog, padding="20")
+        fields_frame.pack(fill=tk.BOTH, expand=True)
+
+        # 현재 자산번호 (읽기 전용)
+        ttk.Label(fields_frame, text="현재 자산번호:").grid(row=0, column=0, sticky=tk.W, pady=8)
+        asset_label = ttk.Label(fields_frame, text=self.pc_asset_number,
+                                font=("맑은 고딕", 10, "bold"), foreground="blue")
+        asset_label.grid(row=0, column=1, sticky=tk.W, pady=8, padx=(10, 0))
+
+        # 새 정보 입력
+        fields = [
+            ("새 PC관리번호:", "new_pc_management_number"),
+            ("새 사업장명:", "new_location_name"),
+            ("새 사번:", "new_employee_number"),
+        ]
+
+        entries = {}
+        for i, (label, key) in enumerate(fields, 1):
+            ttk.Label(fields_frame, text=label).grid(row=i, column=0, sticky=tk.W, pady=8, padx=(0, 10))
+            entry = ttk.Entry(fields_frame, width=30, font=("맑은 고딕", 10))
+            entry.grid(row=i, column=1, sticky=tk.EW, pady=8)
+            entries[key] = entry
+
+        # 요청자 사번
+        row_requester = len(fields) + 1
+        ttk.Label(fields_frame, text="요청자 사번:").grid(row=row_requester, column=0, sticky=tk.W, pady=8)
+        requester_entry = ttk.Entry(fields_frame, width=30, font=("맑은 고딕", 10))
+        requester_entry.grid(row=row_requester, column=1, sticky=tk.EW, pady=8)
+
+        # 재등록 사유 (텍스트 영역)
+        row_reason = row_requester + 1
+        ttk.Label(fields_frame, text="재등록 사유:").grid(row=row_reason, column=0, sticky=tk.NW, pady=8)
+        reason_text = tk.Text(fields_frame, width=30, height=4, font=("맑은 고딕", 10))
+        reason_text.grid(row=row_reason, column=1, sticky=tk.EW, pady=8)
+
+        fields_frame.columnconfigure(1, weight=1)
+
+        def submit_request():
+            vals = {k: e.get().strip() for k, e in entries.items()}
+            requester = requester_entry.get().strip()
+            reason = reason_text.get("1.0", tk.END).strip()
+
+            if not all(vals.values()) or not requester or not reason:
+                messagebox.showwarning("입력 오류", "모든 필드와 사유를 입력해주세요", parent=dialog)
+                return
+
+            result = self.api.request_re_registration(
+                asset_number=self.pc_asset_number,
+                requester_employee=requester,
+                reason=reason,
+                new_pc_management_number=vals["new_pc_management_number"],
+                new_location_name=vals["new_location_name"],
+                new_employee_number=vals["new_employee_number"]
+            )
+
+            if result["success"]:
+                messagebox.showinfo(
+                    "요청 접수",
+                    "재등록 요청이 접수되었습니다.\n관리자 승인을 기다려주세요.",
+                    parent=dialog
+                )
+                dialog.destroy()
+            else:
+                messagebox.showerror("오류", result["error"], parent=dialog)
+
+        ttk.Button(dialog, text="📨 재등록 요청하기", command=submit_request).pack(pady=15)
 
     def change_employee_number(self):
         """사번 변경"""

@@ -77,6 +77,11 @@ class AdminApp:
         self.notebook.add(monitor_tab, text="모니터 관리")
         self.setup_monitor_tab(monitor_tab)
 
+        # 재등록 요청 탭
+        rereg_tab = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(rereg_tab, text="📝 재등록 요청")
+        self.setup_rereg_tab(rereg_tab)
+
     # ===== 대시보드 탭 =====
 
     def setup_dashboard_tab(self, parent):
@@ -865,6 +870,7 @@ class AdminApp:
         self.refresh_monitor_data()
         self.refresh_dashboard()
         self.refresh_campaigns()
+        self.refresh_rereg_requests()
 
     def backup_data(self):
         """데이터 백업"""
@@ -908,6 +914,227 @@ class AdminApp:
             messagebox.showinfo("성공", f"Excel 내보내기 완료\n{file_path}")
         except Exception as e:
             messagebox.showerror("오류", f"Excel 내보내기 실패\n{e}")
+
+
+    # ===== 재등록 요청 탭 =====
+
+    def setup_rereg_tab(self, parent):
+        """재등록 요청 관리 탭"""
+        # 필터 프레임
+        filter_frame = ttk.Frame(parent)
+        filter_frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(filter_frame, text="상태 필터:",
+                  font=("맑은 고딕", 10)).pack(side=tk.LEFT)
+
+        self.rereg_filter_var = tk.StringVar(value="전체")
+        for status in ["전체", "대기", "승인", "거절"]:
+            ttk.Radiobutton(filter_frame, text=status,
+                            variable=self.rereg_filter_var, value=status,
+                            command=self.refresh_rereg_requests
+                            ).pack(side=tk.LEFT, padx=5)
+
+        self.rereg_count_label = ttk.Label(filter_frame, text="",
+                                           font=("맑은 고딕", 10, "bold"),
+                                           foreground="red")
+        self.rereg_count_label.pack(side=tk.RIGHT)
+
+        ttk.Button(filter_frame, text="새로고침",
+                   command=self.refresh_rereg_requests).pack(side=tk.RIGHT, padx=5)
+
+        # 테이블
+        columns = ("id", "asset_number", "requester", "reason",
+                   "new_mgmt", "new_location", "new_employee", "status", "requested_at")
+        self.rereg_tree = ttk.Treeview(parent, columns=columns, show="headings", height=20)
+
+        col_config = [
+            ("id", "ID", 40),
+            ("asset_number", "자산번호", 100),
+            ("requester", "요청자", 80),
+            ("reason", "사유", 200),
+            ("new_mgmt", "새 관리번호", 100),
+            ("new_location", "새 사업장", 100),
+            ("new_employee", "새 사번", 80),
+            ("status", "상태", 60),
+            ("requested_at", "요청일시", 130)
+        ]
+
+        for col_id, heading, width in col_config:
+            self.rereg_tree.heading(col_id, text=heading)
+            self.rereg_tree.column(col_id, width=width, minwidth=40)
+
+        scrollbar = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=self.rereg_tree.yview)
+        self.rereg_tree.configure(yscrollcommand=scrollbar.set)
+
+        self.rereg_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # 더블클릭 → 상세
+        self.rereg_tree.bind("<Double-1>", self.show_rereg_detail)
+
+        # 우클릭 메뉴
+        self.rereg_menu = tk.Menu(self.root, tearoff=0)
+        self.rereg_menu.add_command(label="✅ 승인", command=lambda: self.process_rereg("approve"))
+        self.rereg_menu.add_command(label="❌ 거절", command=lambda: self.process_rereg("reject"))
+        self.rereg_tree.bind("<Button-3>", self.show_rereg_context_menu)
+
+    def show_rereg_context_menu(self, event):
+        """재등록 요청 우클릭 메뉴"""
+        item = self.rereg_tree.identify_row(event.y)
+        if item:
+            self.rereg_tree.selection_set(item)
+            vals = self.rereg_tree.item(item, 'values')
+            if vals and vals[7] == "대기":
+                self.rereg_menu.post(event.x_root, event.y_root)
+
+    def refresh_rereg_requests(self):
+        """재등록 요청 목록 갱신"""
+        status_filter = self.rereg_filter_var.get()
+        status_param = None if status_filter == "전체" else status_filter
+
+        result = self.api.get_re_register_requests(status=status_param)
+        if not result["success"]:
+            return
+
+        for item in self.rereg_tree.get_children():
+            self.rereg_tree.delete(item)
+
+        pending_count = 0
+        for r in result["data"]:
+            if r["status"] == "대기":
+                pending_count += 1
+            tag = "pending" if r["status"] == "대기" else ""
+            self.rereg_tree.insert("", tk.END, values=(
+                r["id"], r["asset_number"], r["requester_employee"],
+                r["reason"][:50], r["new_pc_management_number"],
+                r["new_location_name"], r["new_employee_number"],
+                r["status"], r["requested_at"]
+            ), tags=(tag,))
+
+        self.rereg_tree.tag_configure("pending", background="#FFF3CD")
+
+        # 대기 건수 표시
+        if pending_count > 0:
+            self.rereg_count_label.config(text=f"⚠️ 대기 중: {pending_count}건")
+        else:
+            self.rereg_count_label.config(text="")
+
+    def show_rereg_detail(self, event=None):
+        """재등록 요청 상세 다이얼로그"""
+        selected = self.rereg_tree.selection()
+        if not selected:
+            return
+
+        vals = self.rereg_tree.item(selected[0], 'values')
+        req_id = int(vals[0])
+        is_pending = vals[7] == "대기"
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"재등록 요청 상세 - #{req_id}")
+        dialog.geometry("500x500")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk.Label(dialog, text=f"📋 재등록 요청 #{req_id}",
+                  font=("맑은 고딕", 14, "bold")).pack(pady=15)
+
+        info_frame = ttk.Frame(dialog, padding="20")
+        info_frame.pack(fill=tk.BOTH, expand=True)
+
+        details = [
+            ("자산번호", vals[1]),
+            ("요청자 사번", vals[2]),
+            ("상태", vals[7]),
+            ("요청일시", vals[8]),
+            ("새 PC관리번호", vals[4]),
+            ("새 사업장명", vals[5]),
+            ("새 사번", vals[6]),
+        ]
+
+        for i, (label, value) in enumerate(details):
+            ttk.Label(info_frame, text=f"{label}:",
+                      font=("맑은 고딕", 10, "bold")).grid(row=i, column=0, sticky=tk.W, pady=4)
+            ttk.Label(info_frame, text=str(value),
+                      font=("맑은 고딕", 10)).grid(row=i, column=1, sticky=tk.W, pady=4, padx=(10, 0))
+
+        # 사유 (전체 표시)
+        row_reason = len(details)
+        ttk.Label(info_frame, text="재등록 사유:",
+                  font=("맑은 고딕", 10, "bold")).grid(row=row_reason, column=0, sticky=tk.NW, pady=4)
+        reason_text = tk.Text(info_frame, width=35, height=3, font=("맑은 고딕", 10),
+                              state=tk.NORMAL, wrap=tk.WORD)
+        reason_text.grid(row=row_reason, column=1, sticky=tk.EW, pady=4, padx=(10, 0))
+        reason_text.insert(tk.END, vals[3])
+        reason_text.config(state=tk.DISABLED)
+
+        info_frame.columnconfigure(1, weight=1)
+
+        if is_pending:
+            # 코멘트 입력
+            comment_frame = ttk.LabelFrame(dialog, text="관리자 코멘트", padding="10")
+            comment_frame.pack(fill=tk.X, padx=20, pady=5)
+            comment_entry = tk.Text(comment_frame, width=40, height=2,
+                                     font=("맑은 고딕", 10))
+            comment_entry.pack(fill=tk.X)
+
+            # 버튼
+            btn_frame = ttk.Frame(dialog)
+            btn_frame.pack(pady=15)
+
+            def approve():
+                comment = comment_entry.get("1.0", tk.END).strip()
+                result = self.api.approve_re_register(req_id, comment or None)
+                if result["success"]:
+                    messagebox.showinfo("승인 완료", "재등록이 승인되었습니다", parent=dialog)
+                    dialog.destroy()
+                    self.refresh_rereg_requests()
+                    self.refresh_pc_data()
+                else:
+                    messagebox.showerror("오류", result["error"], parent=dialog)
+
+            def reject():
+                comment = comment_entry.get("1.0", tk.END).strip()
+                if not comment:
+                    messagebox.showwarning("입력 필요", "거절 사유를 입력해주세요", parent=dialog)
+                    return
+                result = self.api.reject_re_register(req_id, comment)
+                if result["success"]:
+                    messagebox.showinfo("거절 완료", "재등록 요청이 거절되었습니다", parent=dialog)
+                    dialog.destroy()
+                    self.refresh_rereg_requests()
+                else:
+                    messagebox.showerror("오류", result["error"], parent=dialog)
+
+            ttk.Button(btn_frame, text="✅ 승인", command=approve).pack(side=tk.LEFT, padx=10)
+            ttk.Button(btn_frame, text="❌ 거절", command=reject).pack(side=tk.LEFT, padx=10)
+
+    def process_rereg(self, action: str):
+        """우클릭 메뉴에서 승인/거절 처리"""
+        selected = self.rereg_tree.selection()
+        if not selected:
+            return
+
+        vals = self.rereg_tree.item(selected[0], 'values')
+        req_id = int(vals[0])
+
+        if action == "approve":
+            if messagebox.askyesno("승인 확인", f"재등록 요청 #{req_id}을 승인하시겠습니까?"):
+                result = self.api.approve_re_register(req_id)
+                if result["success"]:
+                    messagebox.showinfo("성공", "승인 완료")
+                    self.refresh_rereg_requests()
+                    self.refresh_pc_data()
+                else:
+                    messagebox.showerror("오류", result["error"])
+        elif action == "reject":
+            comment = simpledialog.askstring("거절 사유", "거절 사유를 입력하세요:")
+            if comment:
+                result = self.api.reject_re_register(req_id, comment)
+                if result["success"]:
+                    messagebox.showinfo("성공", "거절 완료")
+                    self.refresh_rereg_requests()
+                else:
+                    messagebox.showerror("오류", result["error"])
 
 
 if __name__ == "__main__":

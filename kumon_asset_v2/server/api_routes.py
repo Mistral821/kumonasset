@@ -14,7 +14,8 @@ import json
 
 from database import (
     get_db, PCMaster, SurveyRecord, UserChangeHistory,
-    MonitorMaster, MonitorSurveyRecord, AuditCampaign, AssetHistory
+    MonitorMaster, MonitorSurveyRecord, AuditCampaign, AssetHistory,
+    ReRegistrationRequest
 )
 
 router = APIRouter()
@@ -152,6 +153,19 @@ class CampaignUpdateRequest(BaseModel):
     end_date: Optional[str] = None
     status: Optional[str] = None  # 대기 / 진행중 / 완료
     description: Optional[str] = None
+
+
+class ReRegisterRequestCreate(BaseModel):
+    asset_number: str
+    requester_employee: str
+    reason: str
+    new_pc_management_number: str
+    new_location_name: str
+    new_employee_number: str
+
+
+class ReRegisterProcessRequest(BaseModel):
+    admin_comment: Optional[str] = None
 
 
 # ===== 기본 API =====
@@ -1200,3 +1214,175 @@ async def backup_all_data(
             for c in campaigns
         ]
     }
+
+
+# ===== 재등록 요청 API =====
+
+@router.post("/api/v1/pc/re-register-request")
+async def create_re_register_request(
+    request: ReRegisterRequestCreate,
+    db: Session = Depends(get_db),
+    token: str = Depends(verify_client_token)
+):
+    """PC 재등록 요청 (클라이언트 → 어드민 승인 대기)"""
+    # 기존 대기중 요청이 있는지 확인
+    existing = db.query(ReRegistrationRequest).filter(
+        ReRegistrationRequest.asset_number == request.asset_number,
+        ReRegistrationRequest.status == "대기"
+    ).first()
+
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="이미 대기 중인 재등록 요청이 있습니다"
+        )
+
+    # 요청 생성
+    req = ReRegistrationRequest(
+        asset_number=request.asset_number,
+        requester_employee=request.requester_employee,
+        reason=request.reason,
+        new_pc_management_number=request.new_pc_management_number,
+        new_location_name=request.new_location_name,
+        new_employee_number=request.new_employee_number,
+        status="대기"
+    )
+    db.add(req)
+    db.commit()
+    db.refresh(req)
+
+    record_history(db, "PC", request.asset_number, "재등록요청",
+                   f"사유: {request.reason}, 요청자: {request.requester_employee}")
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "재등록 요청이 접수되었습니다. 관리자 승인을 기다려주세요.",
+        "request_id": req.id
+    }
+
+
+@router.get("/api/v1/admin/re-register-requests")
+async def get_re_register_requests(
+    status: Optional[str] = None,
+    db: Session = Depends(get_db),
+    token: str = Depends(verify_admin_token)
+):
+    """재등록 요청 목록 조회"""
+    query = db.query(ReRegistrationRequest)
+    if status:
+        query = query.filter(ReRegistrationRequest.status == status)
+    requests = query.order_by(ReRegistrationRequest.requested_at.desc()).all()
+
+    return [
+        {
+            "id": r.id,
+            "asset_number": r.asset_number,
+            "requester_employee": r.requester_employee,
+            "reason": r.reason,
+            "new_pc_management_number": r.new_pc_management_number,
+            "new_location_name": r.new_location_name,
+            "new_employee_number": r.new_employee_number,
+            "status": r.status,
+            "admin_comment": r.admin_comment,
+            "requested_at": r.requested_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "processed_at": r.processed_at.strftime("%Y-%m-%d %H:%M:%S") if r.processed_at else None
+        }
+        for r in requests
+    ]
+
+
+@router.put("/api/v1/admin/re-register-requests/{request_id}/approve")
+async def approve_re_register_request(
+    request_id: int,
+    body: ReRegisterProcessRequest,
+    db: Session = Depends(get_db),
+    token: str = Depends(verify_admin_token)
+):
+    """재등록 요청 승인 → PC 실제 재등록 처리"""
+    req = db.query(ReRegistrationRequest).filter(
+        ReRegistrationRequest.id == request_id
+    ).first()
+
+    if not req:
+        raise HTTPException(status_code=404, detail="요청을 찾을 수 없습니다")
+    if req.status != "대기":
+        raise HTTPException(status_code=400, detail="이미 처리된 요청입니다")
+
+    # PC 찾기 (삭제된 것 포함)
+    pc = db.query(PCMaster).filter(
+        PCMaster.asset_number == req.asset_number
+    ).first()
+
+    if pc:
+        # 기존 PC 정보 업데이트 (복구 포함)
+        old_info = json.dumps({
+            "pc_management_number": pc.pc_management_number,
+            "location_name": pc.location_name,
+            "employee_number": pc.employee_number,
+            "is_deleted": pc.is_deleted
+        }, ensure_ascii=False)
+
+        pc.pc_management_number = req.new_pc_management_number
+        pc.location_name = req.new_location_name
+        pc.employee_number = req.new_employee_number
+        pc.is_deleted = False
+        pc.last_updated_at = datetime.now()
+    else:
+        # 새로 등록
+        pc = PCMaster(
+            asset_number=req.asset_number,
+            pc_management_number=req.new_pc_management_number,
+            location_name=req.new_location_name,
+            employee_number=req.new_employee_number
+        )
+        db.add(pc)
+        old_info = None
+
+    # 요청 상태 업데이트
+    req.status = "승인"
+    req.admin_comment = body.admin_comment
+    req.processed_at = datetime.now()
+
+    new_info = json.dumps({
+        "pc_management_number": req.new_pc_management_number,
+        "location_name": req.new_location_name,
+        "employee_number": req.new_employee_number
+    }, ensure_ascii=False)
+
+    record_history(db, "PC", req.asset_number, "재등록승인",
+                   f"사유: {req.reason}",
+                   old_value=old_info, new_value=new_info)
+
+    db.commit()
+
+    return {"success": True, "message": "재등록 요청이 승인되었습니다"}
+
+
+@router.put("/api/v1/admin/re-register-requests/{request_id}/reject")
+async def reject_re_register_request(
+    request_id: int,
+    body: ReRegisterProcessRequest,
+    db: Session = Depends(get_db),
+    token: str = Depends(verify_admin_token)
+):
+    """재등록 요청 거절"""
+    req = db.query(ReRegistrationRequest).filter(
+        ReRegistrationRequest.id == request_id
+    ).first()
+
+    if not req:
+        raise HTTPException(status_code=404, detail="요청을 찾을 수 없습니다")
+    if req.status != "대기":
+        raise HTTPException(status_code=400, detail="이미 처리된 요청입니다")
+
+    req.status = "거절"
+    req.admin_comment = body.admin_comment
+    req.processed_at = datetime.now()
+
+    record_history(db, "PC", req.asset_number, "재등록거절",
+                   f"사유: {req.reason}, 거절사유: {body.admin_comment or '없음'}")
+
+    db.commit()
+
+    return {"success": True, "message": "재등록 요청이 거절되었습니다"}

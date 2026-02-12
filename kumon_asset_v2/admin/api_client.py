@@ -149,3 +149,16 @@ class AdminAPIClient:
     # ===== 백업 API =====
     def backup_data(self) -> Dict:
         return self._get("/api/v1/admin/backup", timeout=30)
+
+    # ===== 재등록 요청 API =====
+    def get_re_register_requests(self, status: str = None) -> Dict:
+        params = {"status": status} if status else {}
+        return self._get("/api/v1/admin/re-register-requests", params=params)
+
+    def approve_re_register(self, request_id: int, comment: str = None) -> Dict:
+        return self._put(f"/api/v1/admin/re-register-requests/{request_id}/approve",
+                         {"admin_comment": comment})
+
+    def reject_re_register(self, request_id: int, comment: str = None) -> Dict:
+        return self._put(f"/api/v1/admin/re-register-requests/{request_id}/reject",
+                         {"admin_comment": comment})
