@@ -12,7 +12,7 @@ class Config:
     """어드민 설정 관리"""
 
     # 기본 설정값
-    DEFAULT_SERVER_URL = "http://localhost:8000"
+    DEFAULT_SERVER_URL = "https://kumonasset.onrender.com"
 
     def __init__(self):
         """설정 초기화"""

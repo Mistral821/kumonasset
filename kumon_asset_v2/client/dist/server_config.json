@@ -1,0 +1,4 @@
+{
+  "server_url": "https://kumonasset.onrender.com",
+  "comment": "Render 배포 시 server_url을 변경하세요 (예: https://your-app.onrender.com)"
+}

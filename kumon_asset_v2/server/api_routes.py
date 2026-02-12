@@ -8,25 +8,26 @@ from sqlalchemy import func, and_
 from typing import List, Optional
 from datetime import datetime, date
 from pydantic import BaseModel
+import os
 
 from database import get_db, PCMaster, SurveyRecord, UserChangeHistory, MonitorMaster, MonitorSurveyRecord
 
 router = APIRouter()
 
-# 인증 토큰 (실제로는 환경변수로 관리)
-CLIENT_TOKEN = "kumon_client_secret_token_2025"
-ADMIN_TOKEN = "kumon_admin_secret_token_2025"
+# 인증 토큰 (환경변수 우선, 없으면 기본값)
+CLIENT_TOKEN = os.getenv("CLIENT_TOKEN", "kumon_client_secret_token_2025")
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "kumon_admin_secret_token_2025")
 
 
 def verify_client_token(authorization: str = Header(None)):
     """클라이언트 토큰 검증"""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="인증 토큰이 없습니다")
-    
+
     token = authorization.replace("Bearer ", "")
     if token != CLIENT_TOKEN:
         raise HTTPException(status_code=403, detail="유효하지 않은 토큰입니다")
-    
+
     return token
 
 
@@ -34,11 +35,11 @@ def verify_admin_token(authorization: str = Header(None)):
     """관리자 토큰 검증"""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="인증 토큰이 없습니다")
-    
+
     token = authorization.replace("Bearer ", "")
     if token != ADMIN_TOKEN:
         raise HTTPException(status_code=403, detail="관리자 권한이 없습니다")
-    
+
     return token
 
 
@@ -74,9 +75,8 @@ class PCResponse(BaseModel):
     employee_number: str
     registered_at: datetime
     last_updated_at: datetime
-    
-    class Config:
-        from_attributes = True
+
+    model_config = {"from_attributes": True}
 
 
 class SurveyStatusResponse(BaseModel):
@@ -111,8 +111,7 @@ class MonitorResponse(BaseModel):
     registered_at: datetime
     last_updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # ===== API 엔드포인트 =====
@@ -122,7 +121,7 @@ async def root():
     """API 상태 확인"""
     return {
         "service": "구몬 자산관리 API",
-        "version": "2.0",
+        "version": "2.1",
         "status": "running"
     }
 
@@ -134,12 +133,11 @@ async def register_pc(
     token: str = Depends(verify_client_token)
 ):
     """PC 등록"""
-    # 중복 확인
+    # is_deleted 필터 없이 전체 검색 (삭제된 PC 부활 지원)
     existing = db.query(PCMaster).filter(
-        PCMaster.asset_number == request.asset_number,
-        PCMaster.is_deleted == False
+        PCMaster.asset_number == request.asset_number
     ).first()
-    
+
     if existing:
         if existing.is_deleted:
             # 삭제된 PC 재등록 (부활)
@@ -147,11 +145,11 @@ async def register_pc(
             existing.pc_management_number = request.pc_management_number
             existing.location_name = request.location_name
             existing.employee_number = request.employee_number
-            existing.last_updated_at = datetime.utcnow()
-            
+            existing.last_updated_at = datetime.now()
+
             db.commit()
             db.refresh(existing)
-            
+
             return {
                 "success": True,
                 "message": "PC 재등록 완료 (복구됨)",
@@ -160,7 +158,7 @@ async def register_pc(
             }
         else:
             raise HTTPException(status_code=400, detail="이미 등록된 자산번호입니다")
-    
+
     # PC 등록
     pc = PCMaster(
         asset_number=request.asset_number,
@@ -168,11 +166,11 @@ async def register_pc(
         location_name=request.location_name,
         employee_number=request.employee_number
     )
-    
+
     db.add(pc)
     db.commit()
     db.refresh(pc)
-    
+
     return {
         "success": True,
         "message": "PC 등록 완료",
@@ -192,11 +190,11 @@ async def get_pc_info(
         PCMaster.asset_number == asset_number,
         PCMaster.is_deleted == False
     ).first()
-    
+
     if not pc:
         raise HTTPException(status_code=404, detail="PC 정보를 찾을 수 없습니다")
-    
-    return PCResponse.from_orm(pc)
+
+    return PCResponse.model_validate(pc)
 
 
 @router.put("/api/v1/pc/{asset_number}/user")
@@ -206,15 +204,15 @@ async def update_user(
     db: Session = Depends(get_db),
     token: str = Depends(verify_client_token)
 ):
-    """사용자 변경"""
+    """사용자(사번) 변경 - 클라이언트용"""
     pc = db.query(PCMaster).filter(
         PCMaster.asset_number == asset_number,
         PCMaster.is_deleted == False
     ).first()
-    
+
     if not pc:
         raise HTTPException(status_code=404, detail="PC 정보를 찾을 수 없습니다")
-    
+
     # 변경 이력 저장
     history = UserChangeHistory(
         asset_number=asset_number,
@@ -222,13 +220,13 @@ async def update_user(
         new_employee_number=request.new_employee_number
     )
     db.add(history)
-    
+
     # 사용자 변경
     pc.employee_number = request.new_employee_number
-    pc.last_updated_at = datetime.utcnow()
-    
+    pc.last_updated_at = datetime.now()
+
     db.commit()
-    
+
     return {
         "success": True,
         "message": "사용자 변경 완료"
@@ -247,10 +245,10 @@ async def update_pc_info(
         PCMaster.asset_number == asset_number,
         PCMaster.is_deleted == False
     ).first()
-    
+
     if not pc:
         raise HTTPException(status_code=404, detail="PC 정보를 찾을 수 없습니다")
-    
+
     # 자산번호 변경 시 중복 체크 및 Cascade 업데이트
     if request.new_asset_number and request.new_asset_number != asset_number:
         # 중복 체크
@@ -259,18 +257,18 @@ async def update_pc_info(
         ).first()
         if existing:
             raise HTTPException(status_code=400, detail="변경하려는 자산번호가 이미 존재합니다")
-            
+
         # FK Cascade 수동 처리
         # 1. SurveyRecord
         db.query(SurveyRecord).filter(
             SurveyRecord.asset_number == asset_number
         ).update({"asset_number": request.new_asset_number})
-        
+
         # 2. UserChangeHistory
         db.query(UserChangeHistory).filter(
             UserChangeHistory.asset_number == asset_number
         ).update({"asset_number": request.new_asset_number})
-        
+
         # 3. PCMaster
         pc.asset_number = request.new_asset_number
 
@@ -281,55 +279,13 @@ async def update_pc_info(
         pc.location_name = request.location_name
     if request.employee_number:
         pc.employee_number = request.employee_number
-        
-    pc.last_updated_at = datetime.utcnow()
+
+    pc.last_updated_at = datetime.now()
     db.commit()
-    
+
     return {
         "success": True,
         "message": "PC 정보 수정 완료"
-    }
-
-
-@router.post("/api/v1/survey/complete")
-async def complete_survey(
-    request: SurveyCompleteRequest,
-    db: Session = Depends(get_db),
-    token: str = Depends(verify_client_token)
-):
-    """자산조사 완료 (레거시 엔드포인트)"""
-    # PC 존재 확인
-    pc = db.query(PCMaster).filter(
-        PCMaster.asset_number == request.asset_number,
-        PCMaster.is_deleted == False
-    ).first()
-
-    if not pc:
-        raise HTTPException(status_code=404, detail="PC 정보를 찾을 수 없습니다")
-
-    # 오늘 이미 조사했는지 확인
-    today = date.today()
-    existing = db.query(SurveyRecord).filter(
-        SurveyRecord.asset_number == request.asset_number,
-        func.date(SurveyRecord.survey_date) == today
-    ).first()
-
-    if existing:
-        raise HTTPException(status_code=400, detail="오늘 이미 자산조사를 완료했습니다")
-
-    # 조사 기록 저장
-    survey = SurveyRecord(
-        asset_number=request.asset_number,
-        survey_date=datetime.now()
-    )
-    db.add(survey)
-    db.commit()
-    db.refresh(survey)
-
-    return {
-        "success": True,
-        "message": "자산조사 완료!",
-        "survey_id": survey.id
     }
 
 
@@ -380,6 +336,17 @@ async def complete_pc_survey(
     }
 
 
+# 레거시 엔드포인트 → 신규 엔드포인트로 리다이렉트
+@router.post("/api/v1/survey/complete")
+async def complete_survey_legacy(
+    request: SurveyCompleteRequest,
+    db: Session = Depends(get_db),
+    token: str = Depends(verify_client_token)
+):
+    """자산조사 완료 (레거시 - /api/v1/pc/survey 사용 권장)"""
+    return await complete_pc_survey(request, db, token)
+
+
 # ===== 관리자 API =====
 
 @router.get("/api/v1/admin/pcs")
@@ -387,19 +354,28 @@ async def get_all_pcs(
     db: Session = Depends(get_db),
     token: str = Depends(verify_admin_token)
 ):
-    """전체 PC 목록 조회 (관리자)"""
+    """전체 PC 목록 조회 (관리자) - N+1 최적화"""
     pcs = db.query(PCMaster).filter(PCMaster.is_deleted == False).all()
-    
-    result = []
+
+    # 오늘 조사 완료된 자산번호 목록 (1회 쿼리)
     today = date.today()
-    
-    for pc in pcs:
-        # 오늘 조사 여부 확인
-        surveyed_today = db.query(SurveyRecord).filter(
-            SurveyRecord.asset_number == pc.asset_number,
+    surveyed_assets = set(
+        row[0] for row in db.query(SurveyRecord.asset_number).filter(
             func.date(SurveyRecord.survey_date) == today
-        ).first() is not None
-        
+        ).all()
+    )
+
+    # 각 PC의 마지막 조사일 (1회 쿼리)
+    last_surveys = dict(
+        db.query(
+            SurveyRecord.asset_number,
+            func.max(SurveyRecord.survey_date)
+        ).group_by(SurveyRecord.asset_number).all()
+    )
+
+    result = []
+    for pc in pcs:
+        last_survey = last_surveys.get(pc.asset_number)
         result.append({
             "id": pc.id,
             "asset_number": pc.asset_number,
@@ -408,9 +384,10 @@ async def get_all_pcs(
             "employee_number": pc.employee_number,
             "registered_at": pc.registered_at.strftime("%Y-%m-%d"),
             "last_updated_at": pc.last_updated_at.isoformat(),
-            "surveyed_today": surveyed_today
+            "surveyed_today": pc.asset_number in surveyed_assets,
+            "last_survey_date": last_survey.strftime("%Y-%m-%d %H:%M:%S") if last_survey else None
         })
-    
+
     return result
 
 
@@ -423,13 +400,13 @@ async def get_survey_status(
     """자산조사 현황 (관리자)"""
     # 전체 PC 수
     total = db.query(PCMaster).filter(PCMaster.is_deleted == False).count()
-    
+
     # 조사 날짜
     if survey_date:
         target_date = datetime.strptime(survey_date, "%Y-%m-%d").date()
     else:
         target_date = date.today()
-    
+
     # 조사 완료 수 (삭제된 PC 제외)
     completed = db.query(func.count(func.distinct(SurveyRecord.asset_number))).join(
         PCMaster, SurveyRecord.asset_number == PCMaster.asset_number
@@ -437,7 +414,7 @@ async def get_survey_status(
         func.date(SurveyRecord.survey_date) == target_date,
         PCMaster.is_deleted == False
     ).scalar()
-    
+
     return SurveyStatusResponse(
         total=total,
         completed=completed,
@@ -459,15 +436,15 @@ async def get_survey_history(
         end = datetime.strptime(end_date, "%Y-%m-%d").date()
     except ValueError:
         raise HTTPException(status_code=400, detail="날짜 형식이 올바르지 않습니다 (YYYY-MM-DD)")
-        
-    # SurveyRecord와 PCMaster 조인 (Outer Join으로 변경)
+
+    # SurveyRecord와 PCMaster 조인 (Outer Join)
     results = db.query(SurveyRecord, PCMaster).outerjoin(
         PCMaster, SurveyRecord.asset_number == PCMaster.asset_number
     ).filter(
         func.date(SurveyRecord.survey_date) >= start,
         func.date(SurveyRecord.survey_date) <= end
     ).order_by(SurveyRecord.survey_date.desc()).all()
-    
+
     history = []
     for survey, pc in results:
         history.append({
@@ -477,7 +454,7 @@ async def get_survey_history(
             "location_name": pc.location_name if pc else "정보 없음",
             "employee_number": pc.employee_number if pc else "-"
         })
-        
+
     return history
 
 
@@ -492,14 +469,14 @@ async def delete_pc(
         PCMaster.asset_number == asset_number,
         PCMaster.is_deleted == False
     ).first()
-    
+
     if not pc:
         raise HTTPException(status_code=404, detail="PC 정보를 찾을 수 없습니다")
-    
+
     # Soft delete
     pc.is_deleted = True
     db.commit()
-    
+
     return {
         "success": True,
         "message": "PC 삭제 완료"
@@ -515,9 +492,11 @@ async def backup_all_data(
     pcs = db.query(PCMaster).filter(PCMaster.is_deleted == False).all()
     surveys = db.query(SurveyRecord).all()
     user_changes = db.query(UserChangeHistory).all()
-    
+    monitors = db.query(MonitorMaster).filter(MonitorMaster.is_deleted == False).all()
+    monitor_surveys = db.query(MonitorSurveyRecord).all()
+
     backup_data = {
-        "backup_date": datetime.utcnow().isoformat(),
+        "backup_date": datetime.now().isoformat(),
         "pcs": [
             {
                 "asset_number": pc.asset_number,
@@ -545,9 +524,29 @@ async def backup_all_data(
                 "changed_at": uc.changed_at.isoformat()
             }
             for uc in user_changes
+        ],
+        "monitors": [
+            {
+                "asset_number": m.asset_number,
+                "monitor_management_number": m.monitor_management_number,
+                "location_name": m.location_name,
+                "employee_number": m.employee_number,
+                "connected_pc_asset_number": m.connected_pc_asset_number,
+                "registered_at": m.registered_at.isoformat(),
+                "last_updated_at": m.last_updated_at.isoformat()
+            }
+            for m in monitors
+        ],
+        "monitor_surveys": [
+            {
+                "asset_number": ms.asset_number,
+                "survey_date": ms.survey_date.isoformat(),
+                "completed_at": ms.completed_at.isoformat()
+            }
+            for ms in monitor_surveys
         ]
     }
-    
+
     return backup_data
 
 
@@ -560,21 +559,20 @@ async def register_monitor(
     token: str = Depends(verify_client_token)
 ):
     """모니터 등록"""
-    # 중복 확인
+    # is_deleted 필터 없이 전체 검색 (삭제된 모니터 부활 지원)
     existing = db.query(MonitorMaster).filter(
-        MonitorMaster.asset_number == request.asset_number,
-        MonitorMaster.is_deleted == False
+        MonitorMaster.asset_number == request.asset_number
     ).first()
 
     if existing:
         if existing.is_deleted:
-            # 삭제된 모니터 재등록
+            # 삭제된 모니터 재등록 (부활)
             existing.is_deleted = False
             existing.monitor_management_number = request.monitor_management_number
             existing.location_name = request.location_name
             existing.employee_number = request.employee_number
             existing.connected_pc_asset_number = request.connected_pc_asset_number
-            existing.last_updated_at = datetime.utcnow()
+            existing.last_updated_at = datetime.now()
 
             db.commit()
             db.refresh(existing)
@@ -624,7 +622,7 @@ async def get_monitor_info(
     if not monitor:
         raise HTTPException(status_code=404, detail="모니터 정보를 찾을 수 없습니다")
 
-    return MonitorResponse.from_orm(monitor)
+    return MonitorResponse.model_validate(monitor)
 
 
 @router.put("/api/v1/monitor/{asset_number}")
@@ -653,7 +651,7 @@ async def update_monitor(
     if request.connected_pc_asset_number is not None:
         monitor.connected_pc_asset_number = request.connected_pc_asset_number
 
-    monitor.last_updated_at = datetime.utcnow()
+    monitor.last_updated_at = datetime.now()
 
     db.commit()
     db.refresh(monitor)
@@ -718,16 +716,20 @@ async def get_all_monitors(
     db: Session = Depends(get_db),
     token: str = Depends(verify_admin_token)
 ):
-    """전체 모니터 목록 조회 (관리자)"""
+    """전체 모니터 목록 조회 (관리자) - N+1 최적화"""
     monitors = db.query(MonitorMaster).filter(MonitorMaster.is_deleted == False).all()
+
+    # 각 모니터의 마지막 조사일 (1회 쿼리)
+    last_surveys = dict(
+        db.query(
+            MonitorSurveyRecord.asset_number,
+            func.max(MonitorSurveyRecord.completed_at)
+        ).group_by(MonitorSurveyRecord.asset_number).all()
+    )
 
     result = []
     for monitor in monitors:
-        # 최근 조사 기록 조회
-        latest_survey = db.query(MonitorSurveyRecord).filter(
-            MonitorSurveyRecord.asset_number == monitor.asset_number
-        ).order_by(MonitorSurveyRecord.completed_at.desc()).first()
-
+        last_survey = last_surveys.get(monitor.asset_number)
         result.append({
             "asset_number": monitor.asset_number,
             "monitor_management_number": monitor.monitor_management_number,
@@ -736,10 +738,44 @@ async def get_all_monitors(
             "connected_pc_asset_number": monitor.connected_pc_asset_number,
             "registered_at": monitor.registered_at.strftime("%Y-%m-%d %H:%M:%S"),
             "last_updated_at": monitor.last_updated_at.strftime("%Y-%m-%d %H:%M:%S"),
-            "last_survey_date": latest_survey.completed_at.strftime("%Y-%m-%d %H:%M:%S") if latest_survey else None
+            "last_survey_date": last_survey.strftime("%Y-%m-%d %H:%M:%S") if last_survey else None
         })
 
     return result
+
+
+@router.put("/api/v1/admin/monitor/{asset_number}")
+async def admin_update_monitor(
+    asset_number: str,
+    request: MonitorUpdateRequest,
+    db: Session = Depends(get_db),
+    token: str = Depends(verify_admin_token)
+):
+    """모니터 정보 수정 (관리자)"""
+    monitor = db.query(MonitorMaster).filter(
+        MonitorMaster.asset_number == asset_number,
+        MonitorMaster.is_deleted == False
+    ).first()
+
+    if not monitor:
+        raise HTTPException(status_code=404, detail="모니터를 찾을 수 없습니다")
+
+    if request.monitor_management_number:
+        monitor.monitor_management_number = request.monitor_management_number
+    if request.location_name:
+        monitor.location_name = request.location_name
+    if request.employee_number:
+        monitor.employee_number = request.employee_number
+    if request.connected_pc_asset_number is not None:
+        monitor.connected_pc_asset_number = request.connected_pc_asset_number
+
+    monitor.last_updated_at = datetime.now()
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "모니터 정보 수정 완료"
+    }
 
 
 @router.delete("/api/v1/admin/monitor/{asset_number}")
@@ -779,12 +815,12 @@ async def get_monitor_survey_status(
 
     # 조사 날짜 설정
     if survey_date:
-        target_date = datetime.fromisoformat(survey_date).date()
+        target_date = datetime.strptime(survey_date, "%Y-%m-%d").date()
     else:
         target_date = date.today()
 
     # 조사 완료 수
-    completed = db.query(MonitorSurveyRecord).join(
+    completed = db.query(func.count(func.distinct(MonitorSurveyRecord.asset_number))).join(
         MonitorMaster,
         and_(
             MonitorSurveyRecord.asset_number == MonitorMaster.asset_number,
@@ -792,7 +828,7 @@ async def get_monitor_survey_status(
         )
     ).filter(
         func.date(MonitorSurveyRecord.survey_date) == target_date
-    ).distinct(MonitorSurveyRecord.asset_number).count()
+    ).scalar()
 
     return SurveyStatusResponse(
         total=total,

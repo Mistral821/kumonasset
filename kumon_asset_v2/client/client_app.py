@@ -1,6 +1,6 @@
 """
-구몬 자산관리 시스템 - 클라이언트 v3.1
-PC 자산번호 자동 저장 및 QR 코드 표시
+구몬 자산관리 시스템 - 클라이언트 v3.2
+PC 자산번호 자동 저장, QR 코드 표시, 사번 변경 지원
 """
 
 import tkinter as tk
@@ -15,7 +15,7 @@ import os
 class AssetClientApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("구몬 자산관리 시스템 v3.1")
+        self.root.title("구몬 자산관리 시스템 v3.2")
         self.root.geometry("800x900")
 
         # API 클라이언트
@@ -50,8 +50,8 @@ class AssetClientApp:
                     config = json.load(f)
                     self.pc_asset_number = config.get('pc_asset_number')
                     self.monitor_asset_number = config.get('monitor_asset_number')
-            except:
-                pass
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"설정 파일 로드 실패: {e}")
 
     def save_config(self):
         """로컬 설정 파일에 자산번호 저장"""
@@ -126,6 +126,24 @@ class AssetClientApp:
             command=self.prompt_pc_registration
         ).pack(side=tk.RIGHT)
 
+        # 사번 변경 섹션
+        user_frame = ttk.LabelFrame(parent, text="사번 변경", padding="15")
+        user_frame.pack(fill=tk.X, pady=(0, 10))
+
+        user_input_frame = ttk.Frame(user_frame)
+        user_input_frame.pack(fill=tk.X)
+
+        ttk.Label(user_input_frame, text="새 사번:", font=("맑은 고딕", 10)).pack(side=tk.LEFT)
+        self.new_employee_entry = ttk.Entry(user_input_frame, width=20, font=("맑은 고딕", 10))
+        self.new_employee_entry.pack(side=tk.LEFT, padx=10)
+        self.new_employee_entry.bind('<Return>', lambda e: self.change_employee_number())
+
+        ttk.Button(
+            user_input_frame,
+            text="사번 변경",
+            command=self.change_employee_number
+        ).pack(side=tk.LEFT, padx=5)
+
         # QR 코드 섹션
         qr_frame = ttk.LabelFrame(parent, text="QR 코드 (자산조사용)", padding="15")
         qr_frame.pack(fill=tk.BOTH, expand=True)
@@ -189,13 +207,14 @@ class AssetClientApp:
         qr_frame.pack(fill=tk.BOTH, expand=True)
 
         # 현재 모니터 자산번호
+        self.monitor_asset_display_label = ttk.Label(
+            qr_frame,
+            text=f"모니터 자산번호: {self.monitor_asset_number}" if self.monitor_asset_number else "",
+            font=("맑은 고딕", 11, "bold"),
+            foreground="green"
+        )
         if self.monitor_asset_number:
-            ttk.Label(
-                qr_frame,
-                text=f"모니터 자산번호: {self.monitor_asset_number}",
-                font=("맑은 고딕", 11, "bold"),
-                foreground="green"
-            ).pack(pady=10)
+            self.monitor_asset_display_label.pack(pady=10)
 
         self.monitor_qr_label = ttk.Label(qr_frame, text="모니터를 등록하면 QR 코드가 생성됩니다")
         self.monitor_qr_label.pack(pady=20)
@@ -277,6 +296,28 @@ class AssetClientApp:
             command=register
         ).pack(pady=20)
 
+    def change_employee_number(self):
+        """사번 변경"""
+        if not self.pc_asset_number:
+            messagebox.showwarning("오류", "PC가 등록되지 않았습니다")
+            return
+
+        new_employee = self.new_employee_entry.get().strip()
+        if not new_employee:
+            messagebox.showwarning("입력 오류", "새 사번을 입력해주세요")
+            return
+
+        if not messagebox.askyesno("확인", f"사번을 '{new_employee}'(으)로 변경하시겠습니까?"):
+            return
+
+        result = self.api.update_user(self.pc_asset_number, new_employee)
+
+        if result["success"]:
+            messagebox.showinfo("성공", "사번이 변경되었습니다")
+            self.new_employee_entry.delete(0, tk.END)
+        else:
+            messagebox.showerror("오류", result["error"])
+
     def generate_pc_qr(self):
         """PC QR 코드 생성"""
         if not self.pc_asset_number:
@@ -336,11 +377,15 @@ class AssetClientApp:
         if result["success"]:
             self.monitor_asset_number = asset_number
             self.save_config()
+
+            # 즉시 QR 코드 생성 (재시작 불필요)
+            self.monitor_asset_display_label.config(text=f"모니터 자산번호: {asset_number}")
+            self.monitor_asset_display_label.pack(pady=10)
+            self.generate_monitor_qr()
+
             messagebox.showinfo("성공", result["data"]["message"])
             for entry in self.monitor_entries.values():
                 entry.delete(0, tk.END)
-            # 재시작 요청
-            messagebox.showinfo("안내", "모니터 QR 코드를 생성하려면 프로그램을 재시작하세요")
         else:
             messagebox.showerror("오류", result["error"])
 

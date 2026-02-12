@@ -56,6 +56,35 @@ class AdminAPIClient:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def update_pc_info(self, asset_number: str, new_asset_number: Optional[str] = None,
+                       pc_management_number: Optional[str] = None,
+                       location_name: Optional[str] = None,
+                       employee_number: Optional[str] = None) -> Dict:
+        """PC 정보 수정 (관리자)"""
+        try:
+            data = {}
+            if new_asset_number:
+                data["new_asset_number"] = new_asset_number
+            if pc_management_number:
+                data["pc_management_number"] = pc_management_number
+            if location_name:
+                data["location_name"] = location_name
+            if employee_number:
+                data["employee_number"] = employee_number
+
+            response = requests.put(
+                f"{self.base_url}/api/v1/admin/pc/{asset_number}/info",
+                json=data,
+                headers=self.headers,
+                timeout=10
+            )
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except requests.exceptions.HTTPError as e:
+            return {"success": False, "error": e.response.json().get("detail", str(e))}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def delete_pc(self, asset_number: str) -> Dict:
         """PC 삭제"""
         try:
@@ -96,6 +125,36 @@ class AdminAPIClient:
             )
             response.raise_for_status()
             return {"success": True, "data": response.json()}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def update_monitor(self, asset_number: str,
+                       monitor_management_number: Optional[str] = None,
+                       location_name: Optional[str] = None,
+                       employee_number: Optional[str] = None,
+                       connected_pc_asset_number: Optional[str] = None) -> Dict:
+        """모니터 정보 수정 (관리자)"""
+        try:
+            data = {}
+            if monitor_management_number:
+                data["monitor_management_number"] = monitor_management_number
+            if location_name:
+                data["location_name"] = location_name
+            if employee_number:
+                data["employee_number"] = employee_number
+            if connected_pc_asset_number is not None:
+                data["connected_pc_asset_number"] = connected_pc_asset_number
+
+            response = requests.put(
+                f"{self.base_url}/api/v1/admin/monitor/{asset_number}",
+                json=data,
+                headers=self.headers,
+                timeout=10
+            )
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except requests.exceptions.HTTPError as e:
+            return {"success": False, "error": e.response.json().get("detail", str(e))}
         except Exception as e:
             return {"success": False, "error": str(e)}
 

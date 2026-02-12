@@ -1,6 +1,6 @@
 """
-구몬 자산관리 시스템 - 관리자 프로그램 v3.0
-PC와 모니터 통합 관리
+구몬 자산관리 시스템 - 관리자 프로그램 v3.1
+PC와 모니터 통합 관리 (수정 기능 포함)
 """
 
 import tkinter as tk
@@ -13,7 +13,7 @@ from api_client import AdminAPIClient
 class AssetAdminApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("구몬 자산관리 시스템 - 관리자 v3.0")
+        self.root.title("구몬 자산관리 시스템 - 관리자 v3.1")
         self.root.geometry("1400x800")
 
         self.api = AdminAPIClient()
@@ -109,8 +109,11 @@ class AssetAdminApp:
 
         # 우클릭 메뉴
         self.pc_context_menu = tk.Menu(self.root, tearoff=0)
+        self.pc_context_menu.add_command(label="수정", command=self.edit_selected_pc)
+        self.pc_context_menu.add_separator()
         self.pc_context_menu.add_command(label="삭제", command=self.delete_selected_pc)
         self.pc_tree.bind("<Button-3>", self.show_pc_context_menu)
+        self.pc_tree.bind("<Double-1>", lambda e: self.edit_selected_pc())
 
     def setup_monitor_tab(self, parent):
         """모니터 관리 탭"""
@@ -165,8 +168,11 @@ class AssetAdminApp:
 
         # 우클릭 메뉴
         self.monitor_context_menu = tk.Menu(self.root, tearoff=0)
+        self.monitor_context_menu.add_command(label="수정", command=self.edit_selected_monitor)
+        self.monitor_context_menu.add_separator()
         self.monitor_context_menu.add_command(label="삭제", command=self.delete_selected_monitor)
         self.monitor_tree.bind("<Button-3>", self.show_monitor_context_menu)
+        self.monitor_tree.bind("<Double-1>", lambda e: self.edit_selected_monitor())
 
     def check_connection(self):
         """서버 연결 확인"""
@@ -231,7 +237,7 @@ class AssetAdminApp:
                 pc["location_name"],
                 pc["employee_number"],
                 pc["registered_at"],
-                pc.get("last_survey_date", "-")
+                pc.get("last_survey_date") or "-"
             ))
 
     def update_monitor_table(self, data):
@@ -243,9 +249,9 @@ class AssetAdminApp:
                 monitor["monitor_management_number"],
                 monitor["location_name"],
                 monitor["employee_number"],
-                monitor.get("connected_pc_asset_number", "-"),
+                monitor.get("connected_pc_asset_number") or "-",
                 monitor["registered_at"],
-                monitor.get("last_survey_date", "-")
+                monitor.get("last_survey_date") or "-"
             ))
 
     def search_pc(self):
@@ -257,7 +263,9 @@ class AssetAdminApp:
 
         filtered = [
             pc for pc in self.pc_data
-            if keyword in pc["asset_number"].lower() or keyword in pc["location_name"].lower()
+            if keyword in pc["asset_number"].lower()
+            or keyword in pc["location_name"].lower()
+            or keyword in pc["employee_number"].lower()
         ]
         self.update_pc_table(filtered)
 
@@ -270,7 +278,9 @@ class AssetAdminApp:
 
         filtered = [
             m for m in self.monitor_data
-            if keyword in m["asset_number"].lower() or keyword in m["location_name"].lower()
+            if keyword in m["asset_number"].lower()
+            or keyword in m["location_name"].lower()
+            or keyword in m["employee_number"].lower()
         ]
         self.update_monitor_table(filtered)
 
@@ -287,6 +297,192 @@ class AssetAdminApp:
         if item:
             self.monitor_tree.selection_set(item)
             self.monitor_context_menu.post(event.x_root, event.y_root)
+
+    # ===== PC 수정 =====
+
+    def edit_selected_pc(self):
+        """선택된 PC 수정 다이얼로그"""
+        selected = self.pc_tree.selection()
+        if not selected:
+            messagebox.showwarning("알림", "수정할 PC를 선택해주세요")
+            return
+
+        values = self.pc_tree.item(selected[0])["values"]
+        current_asset = str(values[0])
+        current_mgmt = str(values[1])
+        current_loc = str(values[2])
+        current_emp = str(values[3])
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"PC 수정 - {current_asset}")
+        dialog.geometry("500x350")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk.Label(
+            dialog,
+            text="PC 정보 수정",
+            font=("맑은 고딕", 14, "bold")
+        ).pack(pady=15)
+
+        fields_frame = ttk.Frame(dialog, padding="20")
+        fields_frame.pack(fill=tk.BOTH, expand=True)
+
+        fields = [
+            ("자산번호:", "asset_number", current_asset),
+            ("PC관리번호:", "pc_management_number", current_mgmt),
+            ("사업장명:", "location_name", current_loc),
+            ("사번:", "employee_number", current_emp),
+        ]
+
+        entries = {}
+        for i, (label, key, current_val) in enumerate(fields):
+            ttk.Label(fields_frame, text=label, font=("맑은 고딕", 10)).grid(
+                row=i, column=0, sticky=tk.W, pady=8, padx=(0, 10)
+            )
+            entry = ttk.Entry(fields_frame, width=30, font=("맑은 고딕", 10))
+            entry.insert(0, current_val)
+            entry.grid(row=i, column=1, sticky=tk.EW, pady=8)
+            entries[key] = entry
+
+        fields_frame.columnconfigure(1, weight=1)
+
+        def save():
+            new_asset = entries["asset_number"].get().strip()
+            new_mgmt = entries["pc_management_number"].get().strip()
+            new_loc = entries["location_name"].get().strip()
+            new_emp = entries["employee_number"].get().strip()
+
+            if not all([new_asset, new_mgmt, new_loc, new_emp]):
+                messagebox.showwarning("입력 오류", "모든 필드를 입력해주세요", parent=dialog)
+                return
+
+            # 변경된 것만 전달
+            kwargs = {}
+            if new_asset != current_asset:
+                kwargs["new_asset_number"] = new_asset
+            if new_mgmt != current_mgmt:
+                kwargs["pc_management_number"] = new_mgmt
+            if new_loc != current_loc:
+                kwargs["location_name"] = new_loc
+            if new_emp != current_emp:
+                kwargs["employee_number"] = new_emp
+
+            if not kwargs:
+                messagebox.showinfo("알림", "변경된 내용이 없습니다", parent=dialog)
+                dialog.destroy()
+                return
+
+            result = self.api.update_pc_info(current_asset, **kwargs)
+            if result["success"]:
+                messagebox.showinfo("성공", "PC 정보가 수정되었습니다", parent=dialog)
+                dialog.destroy()
+                self.refresh_pc_data()
+            else:
+                messagebox.showerror("오류", result["error"], parent=dialog)
+
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="저장", command=save).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="취소", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+
+    # ===== 모니터 수정 =====
+
+    def edit_selected_monitor(self):
+        """선택된 모니터 수정 다이얼로그"""
+        selected = self.monitor_tree.selection()
+        if not selected:
+            messagebox.showwarning("알림", "수정할 모니터를 선택해주세요")
+            return
+
+        values = self.monitor_tree.item(selected[0])["values"]
+        current_asset = str(values[0])
+        current_mgmt = str(values[1])
+        current_loc = str(values[2])
+        current_emp = str(values[3])
+        current_pc = str(values[4]) if values[4] != "-" else ""
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"모니터 수정 - {current_asset}")
+        dialog.geometry("500x380")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk.Label(
+            dialog,
+            text="모니터 정보 수정",
+            font=("맑은 고딕", 14, "bold")
+        ).pack(pady=15)
+
+        fields_frame = ttk.Frame(dialog, padding="20")
+        fields_frame.pack(fill=tk.BOTH, expand=True)
+
+        # 자산번호는 표시만 (수정 불가)
+        ttk.Label(fields_frame, text="자산번호:", font=("맑은 고딕", 10)).grid(
+            row=0, column=0, sticky=tk.W, pady=8, padx=(0, 10)
+        )
+        ttk.Label(fields_frame, text=current_asset, font=("맑은 고딕", 10, "bold"),
+                  foreground="blue").grid(row=0, column=1, sticky=tk.W, pady=8)
+
+        fields = [
+            ("모니터관리번호:", "monitor_management_number", current_mgmt),
+            ("사업장명:", "location_name", current_loc),
+            ("사번:", "employee_number", current_emp),
+            ("연결 PC 자산번호:", "connected_pc", current_pc),
+        ]
+
+        entries = {}
+        for i, (label, key, current_val) in enumerate(fields, start=1):
+            ttk.Label(fields_frame, text=label, font=("맑은 고딕", 10)).grid(
+                row=i, column=0, sticky=tk.W, pady=8, padx=(0, 10)
+            )
+            entry = ttk.Entry(fields_frame, width=30, font=("맑은 고딕", 10))
+            entry.insert(0, current_val)
+            entry.grid(row=i, column=1, sticky=tk.EW, pady=8)
+            entries[key] = entry
+
+        fields_frame.columnconfigure(1, weight=1)
+
+        def save():
+            new_mgmt = entries["monitor_management_number"].get().strip()
+            new_loc = entries["location_name"].get().strip()
+            new_emp = entries["employee_number"].get().strip()
+            new_pc = entries["connected_pc"].get().strip()
+
+            if not all([new_mgmt, new_loc, new_emp]):
+                messagebox.showwarning("입력 오류", "필수 필드를 입력해주세요", parent=dialog)
+                return
+
+            # 변경된 것만 전달
+            kwargs = {}
+            if new_mgmt != current_mgmt:
+                kwargs["monitor_management_number"] = new_mgmt
+            if new_loc != current_loc:
+                kwargs["location_name"] = new_loc
+            if new_emp != current_emp:
+                kwargs["employee_number"] = new_emp
+            if new_pc != current_pc:
+                kwargs["connected_pc_asset_number"] = new_pc or None
+
+            if not kwargs:
+                messagebox.showinfo("알림", "변경된 내용이 없습니다", parent=dialog)
+                dialog.destroy()
+                return
+
+            result = self.api.update_monitor(current_asset, **kwargs)
+            if result["success"]:
+                messagebox.showinfo("성공", "모니터 정보가 수정되었습니다", parent=dialog)
+                dialog.destroy()
+                self.refresh_monitor_data()
+            else:
+                messagebox.showerror("오류", result["error"], parent=dialog)
+
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="저장", command=save).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="취소", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+
+    # ===== 삭제 =====
 
     def delete_selected_pc(self):
         """선택된 PC 삭제"""
@@ -321,6 +517,8 @@ class AssetAdminApp:
                 self.refresh_monitor_data()
             else:
                 messagebox.showerror("오류", result["error"])
+
+    # ===== 백업 & 내보내기 =====
 
     def backup_data(self):
         """데이터 백업"""

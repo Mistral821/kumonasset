@@ -68,6 +68,23 @@ class APIClient:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def update_user(self, asset_number: str, new_employee_number: str) -> Dict:
+        """사번 변경"""
+        try:
+            data = {"new_employee_number": new_employee_number}
+            response = requests.put(
+                f"{self.base_url}/api/v1/pc/{asset_number}/user",
+                json=data,
+                headers=self.headers,
+                timeout=10
+            )
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except requests.exceptions.HTTPError as e:
+            return {"success": False, "error": e.response.json().get("detail", str(e))}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def complete_pc_survey(self, asset_number: str) -> Dict:
         """PC 자산조사 완료"""
         try:

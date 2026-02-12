@@ -1,11 +1,10 @@
 """
 구몬 자산관리 시스템 - 데이터베이스 모델
-PostgreSQL 사용
+PostgreSQL / SQLite 지원
 """
 
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, ForeignKey
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.orm import DeclarativeBase, sessionmaker, relationship
 from datetime import datetime
 import os
 
@@ -25,13 +24,16 @@ if DATABASE_URL.startswith("sqlite"):
 else:
     engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+
+
+class Base(DeclarativeBase):
+    pass
 
 
 class PCMaster(Base):
     """PC 마스터 정보"""
     __tablename__ = "pc_master"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     asset_number = Column(String(50), unique=True, nullable=False, index=True)
     pc_management_number = Column(String(50), nullable=False)
@@ -40,7 +42,7 @@ class PCMaster(Base):
     registered_at = Column(DateTime, default=datetime.now)
     last_updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     is_deleted = Column(Boolean, default=False)
-    
+
     # 관계
     surveys = relationship("SurveyRecord", back_populates="pc")
     user_changes = relationship("UserChangeHistory", back_populates="pc")
@@ -49,12 +51,12 @@ class PCMaster(Base):
 class SurveyRecord(Base):
     """자산조사 기록"""
     __tablename__ = "survey_records"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     asset_number = Column(String(50), ForeignKey("pc_master.asset_number"), nullable=False)
     survey_date = Column(DateTime, default=datetime.now)
     completed_at = Column(DateTime, default=datetime.now)
-    
+
     # 관계
     pc = relationship("PCMaster", back_populates="surveys")
 
