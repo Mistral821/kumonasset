@@ -88,6 +88,38 @@ class AssetClientApp:
         ttk.Button(header, text="연결 테스트",
                    command=self.check_connection).pack(side=tk.RIGHT)
 
+        ttk.Button(header, text="초기화",
+                   command=self.reset_app).pack(side=tk.RIGHT, padx=5)
+
+    def reset_app(self):
+        """앱 초기화 (자산번호 삭제 및 재등록)"""
+        if not messagebox.askyesno("초기화", "앱을 초기화하시겠습니까?\n저장된 자산번호가 삭제되고 재등록이 필요합니다."):
+            return
+
+        try:
+            if os.path.exists(self.config_file):
+                os.remove(self.config_file)
+            
+            self.pc_asset_number = None
+            self.monitor_asset_number = None
+            self.active_campaign_id = None
+            self.active_campaign_name = None
+            
+            # UI 초기화
+            self.pc_asset_label.config(text="미등록")
+            if hasattr(self, 'lbl_pc_mgmt'):
+                self.lbl_pc_mgmt.config(text="-")
+                self.lbl_pc_loc.config(text="-")
+                self.lbl_pc_emp.config(text="-")
+            
+            self.pc_qr_label.config(image='', text="자산번호를 등록하면 QR 코드가 생성됩니다")
+            
+            messagebox.showinfo("초기화 완료", "앱이 초기화되었습니다.\n다시 등록해주세요.")
+            self.prompt_pc_registration()
+            
+        except Exception as e:
+            messagebox.showerror("오류", f"초기화 실패: {e}")
+
         # 캠페인 표시 바
         self.campaign_frame = ttk.LabelFrame(self.root, text="현재 실사 캠페인", padding="8")
         self.campaign_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
